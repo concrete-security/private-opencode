@@ -96,7 +96,8 @@
     "protobufjs",
     "tree-sitter",
     "tree-sitter-bash",
-    "web-tree-sitter"
+    "web-tree-sitter",
+    "@concrete-security/atlas-node"
   ],
   "overrides": {
     "@types/bun": "catalog:",

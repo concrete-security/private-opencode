@@ -1003,6 +1003,20 @@ export namespace Config {
     })
   export type Provider = z.infer<typeof Provider>
 
+  export const Atls = z
+    .object({
+      enabled: z.boolean().optional().default(true).describe("Enable aTLS for LLM requests"),
+      target: z.string().describe("TEE hostname to route through aTLS (must match provider baseURL host)"),
+      policy: z
+        .object({ type: z.string() })
+        .catchall(z.any())
+        .describe("Attestation verification policy"),
+      logAttestation: z.boolean().optional().default(false).describe("Log attestation results"),
+    })
+    .strict()
+    .meta({ ref: "AtlsConfig" })
+  export type Atls = z.infer<typeof Atls>
+
   export const Info = z
     .object({
       $schema: z.string().optional().describe("JSON schema reference for configuration validation"),
@@ -1011,6 +1025,7 @@ export namespace Config {
       logLevel: Log.Level.optional().describe("Log level"),
       tui: TUI.optional().describe("TUI specific settings"),
       server: Server.optional().describe("Server configuration for opencode serve and web commands"),
+      atls: Atls.optional().describe("aTLS (attested TLS) configuration for routing LLM requests through a TEE"),
       command: z
         .record(z.string(), Command)
         .optional()

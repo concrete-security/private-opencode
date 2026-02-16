@@ -16,6 +16,7 @@ import { Flag } from "../flag/flag"
 import { iife } from "@/util/iife"
 import { Global } from "../global"
 import path from "path"
+import { Atls } from "./atls"
 
 // Direct imports for bundled providers
 import { createAmazonBedrock, type AmazonBedrockProviderSettings } from "@ai-sdk/amazon-bedrock"
@@ -973,11 +974,14 @@ export namespace Provider {
       log.info("found", { providerID })
     }
 
+    const atlsFetch = await Atls.getFetch({ atls: config.atls })
+
     return {
       models: languages,
       providers,
       sdk,
       modelLoaders,
+      atlsFetch,
     }
   })
 
@@ -1014,7 +1018,8 @@ export namespace Provider {
 
       options["fetch"] = async (input: any, init?: BunFetchRequestInit) => {
         // Preserve custom fetch if it exists, wrap it with timeout logic
-        const fetchFn = customFetch ?? fetch
+        // aTLS fetch sits between custom provider fetch and global fetch
+        const fetchFn = customFetch ?? s.atlsFetch ?? fetch
         const opts = init ?? {}
 
         if (options["timeout"] !== undefined && options["timeout"] !== null) {
