@@ -77,6 +77,7 @@ import { PermissionPrompt } from "./permission"
 import { QuestionPrompt } from "./question"
 import { DialogExportOptions } from "../../ui/dialog-export-options"
 import { formatTranscript } from "../../util/transcript"
+import { getSecurityIndicator } from "../../util/provider"
 import { UI } from "@/cli/ui.ts"
 
 addDefaultParsers(parsers.parsers)
@@ -1300,7 +1301,22 @@ function AssistantMessage(props: { message: AssistantMessage; parts: Part[]; las
                 ▣{" "}
               </span>{" "}
               <span style={{ fg: theme.text }}>{Locale.titlecase(props.message.mode)}</span>
-              <span style={{ fg: theme.textMuted }}> · {props.message.modelID}</span>
+              {(() => {
+                const indicator = getSecurityIndicator(props.message.providerID, !!props.message.error)
+                return (
+                  <span style={{
+                    fg: indicator.status === "error"
+                      ? theme.error
+                      : indicator.status === "secure"
+                        ? theme.success
+                        : theme.textMuted
+                  }}>
+                    {" · "}
+                    {indicator.label}
+                    {props.message.modelID}
+                  </span>
+                )
+              })()}
               <Show when={duration()}>
                 <span style={{ fg: theme.textMuted }}> · {Locale.duration(duration())}</span>
               </Show>
