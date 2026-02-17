@@ -18,6 +18,8 @@ import { Question } from "@/question"
 
 export namespace SessionProcessor {
   const DOOM_LOOP_THRESHOLD = 3
+  const EMPTY_RESPONSE_MAX_RETRIES = 2
+  const EMPTY_RESPONSE_RETRY_DELAY = 1000
   const log = Log.create({ service: "session.processor" })
 
   export type Info = Awaited<ReturnType<typeof create>>
@@ -50,6 +52,8 @@ export namespace SessionProcessor {
           try {
             let currentText: MessageV2.TextPart | undefined
             let reasoningMap: Record<string, MessageV2.ReasoningPart> = {}
+            let stepHasText = false
+            let stepHasToolCall = false
             const stream = await LLM.stream(streamInput)
 
             for await (const value of stream.fullStream) {
@@ -124,6 +128,7 @@ export namespace SessionProcessor {
                   break
 
                 case "tool-call": {
+                  stepHasToolCall = true
                   const match = toolcalls[value.toolCallId]
                   if (match) {
                     const part = await Session.updatePart({
@@ -277,6 +282,7 @@ export namespace SessionProcessor {
                   break
 
                 case "text-start":
+                  stepHasText = true
                   currentText = {
                     id: Identifier.ascending("part"),
                     messageID: input.assistantMessage.id,
@@ -291,6 +297,7 @@ export namespace SessionProcessor {
                   break
 
                 case "text-delta":
+                  stepHasText = true
                   if (currentText) {
                     currentText.text += value.text
                     if (value.providerMetadata) currentText.metadata = value.providerMetadata
@@ -335,6 +342,30 @@ export namespace SessionProcessor {
                   continue
               }
               if (needsCompaction) break
+            }
+            if (!stepHasText && !stepHasToolCall) {
+              if (attempt < EMPTY_RESPONSE_MAX_RETRIES) {
+                attempt++
+                log.warn("empty response, retrying with hint", { attempt })
+                streamInput.messages.push(
+                  {
+                    role: "assistant" as const,
+                    content: "[empty response]",
+                  },
+                  {
+                    role: "user" as const,
+                    content:
+                      "Your previous response was empty — it contained no visible text content and no tool calls. You MUST either:\n1. Provide a clear, complete text response to the user's query, OR\n2. Make a specific tool call to continue your work.\nDo not respond with only internal reasoning.",
+                  },
+                )
+                await SessionRetry.sleep(EMPTY_RESPONSE_RETRY_DELAY, input.abort).catch(() => {})
+                continue
+              }
+              log.warn("empty response, retries exhausted", { attempt })
+              input.assistantMessage.error = MessageV2.fromError(
+                new Error("Empty response after retries"),
+                { providerID: input.model.providerID },
+              )
             }
           } catch (e: any) {
             log.error("process", {
