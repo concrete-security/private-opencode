@@ -18,8 +18,8 @@ import { Question } from "@/question"
 
 export namespace SessionProcessor {
   const DOOM_LOOP_THRESHOLD = 3
-  const EMPTY_RESPONSE_MAX_RETRIES = 2
-  const EMPTY_RESPONSE_RETRY_DELAY = 1000
+  const EMPTY_RESPONSE_MAX_RETRIES = parseInt(process.env.OPENCODE_EMPTY_RESPONSE_RETRIES ?? "2")
+  const EMPTY_RESPONSE_RETRY_DELAY = parseInt(process.env.OPENCODE_EMPTY_RESPONSE_RETRY_DELAY ?? "1000")
   const log = Log.create({ service: "session.processor" })
 
   export type Info = Awaited<ReturnType<typeof create>>
