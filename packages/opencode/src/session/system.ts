@@ -16,7 +16,18 @@ export namespace SystemPrompt {
     return PROMPT_CODEX.trim()
   }
 
+  const PROMPT_MAP: Record<string, string> = {
+    anthropic: PROMPT_ANTHROPIC,
+    qwen: PROMPT_ANTHROPIC_WITHOUT_TODO,
+    beast: PROMPT_BEAST,
+    gemini: PROMPT_GEMINI,
+    trinity: PROMPT_TRINITY,
+    codex: PROMPT_CODEX,
+  }
+
   export function provider(model: Provider.Model) {
+    const override = process.env.OPENCODE_SYSTEM_PROMPT
+    if (override && PROMPT_MAP[override]) return [PROMPT_MAP[override]]
     if (model.api.id.includes("gpt-5")) return [PROMPT_CODEX]
     if (model.api.id.includes("gpt-") || model.api.id.includes("o1") || model.api.id.includes("o3"))
       return [PROMPT_BEAST]
