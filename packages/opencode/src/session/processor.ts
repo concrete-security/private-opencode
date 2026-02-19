@@ -216,6 +216,7 @@ export namespace SessionProcessor {
 
                     if (
                       value.error instanceof PermissionNext.RejectedError ||
+                      value.error instanceof PermissionNext.DeniedError ||
                       value.error instanceof Question.RejectedError
                     ) {
                       blocked = shouldBreak
