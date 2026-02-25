@@ -1,0 +1,93 @@
+name: private-publish
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release (e.g. 0.1.0)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup-bun
+        with:
+          cross-compile: "true"
+
+      - name: Build all targets
+        run: ./packages/opencode/script/build.ts --all
+        env:
+          OPENCODE_VERSION: ${{ inputs.version }}
+
+      - name: Rename binaries and create archives
+        run: |
+          cd packages/opencode/dist
+          mkdir -p ../../../release-archives
+
+          for dir in opencode-*; do
+            [ -d "$dir" ] || continue
+            target="${dir#opencode-}"
+
+            # Rename binary: opencode → secure-opencode
+            if [[ "$target" == windows-* ]]; then
+              mv "$dir/bin/opencode.exe" "$dir/bin/secure-opencode.exe"
+            else
+              mv "$dir/bin/opencode" "$dir/bin/secure-opencode"
+            fi
+
+            # Create archive: tar.gz for linux, zip for others
+            if [[ "$target" == linux-* ]]; then
+              tar -czf "../../../release-archives/secure-opencode-${target}.tar.gz" -C "$dir/bin" .
+            else
+              (cd "$dir/bin" && zip -r "../../../../release-archives/secure-opencode-${target}.zip" .)
+            fi
+          done
+
+          echo "Archives created:"
+          ls -lh ../../../release-archives/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-archives
+          path: release-archives/
+
+  release:
+    needs: build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-archives
+          path: release-archives/
+
+      - name: Guard against duplicate tag
+        run: |
+          if git rev-parse "v${{ inputs.version }}" >/dev/null 2>&1; then
+            echo "::error::Tag v${{ inputs.version }} already exists"
+            exit 1
+          fi
+
+      - name: Create git tag
+        run: |
+          git tag -a "v${{ inputs.version }}" -m "Release v${{ inputs.version }}"
+          git push origin "v${{ inputs.version }}"
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "v${{ inputs.version }}" \
+            --title "v${{ inputs.version }}" \
+            --generate-notes \
+            release-archives/*
