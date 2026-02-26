@@ -1132,6 +1132,18 @@ export namespace Provider {
       const mod = await import(installedPath)
 
       const fn = mod[Object.keys(mod).find((key) => key.startsWith("create"))!]
+      // Resolve bundled SDK for custom providers: pass the factory function instead of a string
+      if (typeof options.sdk === "string" && !BUNDLED_PROVIDERS[options.sdk]) {
+        const msg =
+          `SDK "${options.sdk}" is not bundled in this build. ` +
+          `Supported SDKs: ${Object.keys(BUNDLED_PROVIDERS).join(", ")}. ` +
+          `Please use one of the supported SDKs in your config, or open an issue to request support for "${options.sdk}".`
+        log.warn(msg)
+        throw new Error(msg)
+      }
+      if (typeof options.sdk === "string" && BUNDLED_PROVIDERS[options.sdk]) {
+        options.sdk = BUNDLED_PROVIDERS[options.sdk]
+      }
       const loaded = fn({
         name: model.providerID,
         ...options,
