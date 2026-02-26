@@ -17,6 +17,7 @@ import { iife } from "@/util/iife"
 import { Global } from "../global"
 import path from "path"
 import { Filesystem } from "../util/filesystem"
+import { SystemPromptSchema } from "../session/prompt/registry"
 
 // Direct imports for bundled providers
 import { createAmazonBedrock, type AmazonBedrockProviderSettings } from "@ai-sdk/amazon-bedrock"
@@ -655,6 +656,7 @@ export namespace Provider {
       headers: z.record(z.string(), z.string()),
       release_date: z.string(),
       variants: z.record(z.string(), z.record(z.string(), z.any())).optional(),
+      systemPrompt: SystemPromptSchema,
     })
     .meta({
       ref: "Model",
@@ -879,6 +881,7 @@ export namespace Provider {
           family: model.family ?? existingModel?.family ?? "",
           release_date: model.release_date ?? existingModel?.release_date ?? "",
           variants: {},
+          systemPrompt: model.systemPrompt ?? existingModel?.systemPrompt,
         }
         const merged = mergeDeep(ProviderTransform.variants(parsedModel), model.variants ?? {})
         parsedModel.variants = mapValues(
@@ -1132,6 +1135,18 @@ export namespace Provider {
       const mod = await import(installedPath)
 
       const fn = mod[Object.keys(mod).find((key) => key.startsWith("create"))!]
+      // Resolve bundled SDK for custom providers: pass the factory function instead of a string
+      if (typeof options.sdk === "string" && !BUNDLED_PROVIDERS[options.sdk]) {
+        const msg =
+          `SDK "${options.sdk}" is not bundled in this build. ` +
+          `Supported SDKs: ${Object.keys(BUNDLED_PROVIDERS).join(", ")}. ` +
+          `Please use one of the supported SDKs in your config, or open an issue to request support for "${options.sdk}".`
+        log.warn(msg)
+        throw new Error(msg)
+      }
+      if (typeof options.sdk === "string" && BUNDLED_PROVIDERS[options.sdk]) {
+        options.sdk = BUNDLED_PROVIDERS[options.sdk]
+      }
       const loaded = fn({
         name: model.providerID,
         ...options,
