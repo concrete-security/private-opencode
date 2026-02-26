@@ -22,9 +22,9 @@ jobs:
       matrix:
         settings:
           - name: linux
-            host: blacksmith-4vcpu-ubuntu-2404
+            host: ubuntu-24.04
           - name: windows
-            host: blacksmith-4vcpu-windows-2025
+            host: windows-latest
     runs-on: ${{ matrix.settings.host }}
     defaults:
       run:
@@ -54,10 +54,10 @@ jobs:
       matrix:
         settings:
           - name: linux
-            host: blacksmith-4vcpu-ubuntu-2404
+            host: ubuntu-24.04
             playwright: bunx playwright install --with-deps
           - name: windows
-            host: blacksmith-4vcpu-windows-2025
+            host: windows-latest
             playwright: bunx playwright install
     runs-on: ${{ matrix.settings.host }}
     env:
@@ -94,3 +94,18 @@ jobs:
           path: |
             packages/app/e2e/test-results
             packages/app/e2e/playwright-report
+
+  required:
+    name: test (linux)
+    runs-on: ubuntu-24.04
+    needs:
+      - unit
+      - e2e
+    if: always()
+    steps:
+      - name: Verify upstream test jobs passed
+        run: |
+          echo "unit=${{ needs.unit.result }}"
+          echo "e2e=${{ needs.e2e.result }}"
+          test "${{ needs.unit.result }}" = "success"
+          test "${{ needs.e2e.result }}" = "success"
