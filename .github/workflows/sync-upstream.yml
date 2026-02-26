@@ -1,0 +1,201 @@
+name: Sync Fork with Upstream
+
+on:
+  schedule:
+    # minute (0-59) hour (0-23) day-of-month (1-31) month (1-12) day-of-week (0-7)
+    - cron: "0 * * * *"
+  workflow_dispatch:
+
+# If a run is already in progress, cancel it and start the new one
+# Prevents two syncs from running in parallel and conflicting
+concurrency:
+  group: sync-upstream
+  cancel-in-progress: true
+
+permissions:
+  # Write code (push, reset, branches)
+  contents: write
+  # Create pull requests when there are conflicts
+  pull-requests: write
+  # Disable upstream workflows imported into the fork
+  actions: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      # Clone the repo with FULL history (fetch-depth: 0)
+      # SYNC_TOKEN is a PAT with push rights on the repo
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.SYNC_TOKEN }}
+
+      - name: Configure git identity
+        run: |
+          # Bot identity for commits created by this workflow
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          # Replace the origin URL to inject the auth token
+          # Without this, git push would fail because the default GITHUB_TOKEN lacks force-push rights
+          git remote set-url origin "https://x-access-token:${SYNC_TOKEN}@github.com/${{ github.repository }}.git"
+        env:
+          SYNC_TOKEN: ${{ secrets.SYNC_TOKEN }}
+
+      - name: Fetch upstream
+        run: |
+          # Add the original repo (upstream) as a remote. || true to ignore if already added
+          git remote add upstream https://github.com/anomalyco/opencode.git || true
+          # Download the latest upstream commits without modifying our local branches
+          git fetch upstream
+
+      - name: Check for new changes
+        # id: check lets subsequent steps read this step's outputs
+        id: check
+        run: |
+          # Count the number of commits present in upstream/dev but missing from origin/dev
+          # rev-list origin/dev..upstream/dev = "commits in upstream that are not in origin"
+          NEW_COMMITS=$(git rev-list --count origin/dev..upstream/dev)
+          if [ "$NEW_COMMITS" -eq 0 ]; then
+            echo "No new commits from upstream, nothing to do"
+            # Write has_changes=false to GITHUB_OUTPUT so subsequent steps can read it
+            echo "has_changes=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "$NEW_COMMITS new commit(s) from upstream"
+            echo "has_changes=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Rebase on upstream
+        # id so the "Merge and create PR" step can check if this step failed
+        id: rebase
+        # Only runs if the previous step detected new upstream commits
+        if: steps.check.outputs.has_changes == 'true'
+        # continue-on-error: true = if the rebase fails (conflict), the workflow continues
+        # instead of stopping. The next step will check steps.rebase.outcome == 'failure'
+        continue-on-error: true
+        run: |
+          # Delete the temporary branch if it's left over from a previous crashed run
+          # 2>/dev/null hides errors, || true prevents the script from stopping if the branch doesn't exist
+          git branch -D rebase/upstream 2>/dev/null || true
+
+          # Create a temporary branch from origin/dev to rebase on
+          # We do NOT rebase directly on dev to protect it in case of failure
+          git checkout -b rebase/upstream origin/dev
+          # Replay our commits on top of upstream/dev
+          # If there's a conflict here, the script exits (exit 1) and continue-on-error catches it
+          git rebase upstream/dev
+
+          # --- If we reach here, the rebase succeeded ---
+
+          # Replace third-party runners (e.g. namespace-ubuntu-24.04) with GitHub standard runners
+          # Upstream uses custom runners we don't have, so we replace them
+          sed -i -E 's/(runs-on|host|runner): [a-zA-Z]+-[a-zA-Z0-9_-]*(ubuntu|linux)[a-zA-Z0-9_-]*/\1: ubuntu-24.04/g' .github/workflows/*.yml
+          sed -i -E 's/(runs-on|host|runner): [a-zA-Z]+-[a-zA-Z0-9_-]*(windows)[a-zA-Z0-9_-]*/\1: windows-latest/g' .github/workflows/*.yml
+          # Stage the files modified by sed
+          git add .github/workflows/*.yml
+          # Only commit if there are actual changes (--quiet returns 0 if nothing changed)
+          git diff --cached --quiet || git commit -m "chore(ci): replace third-party runners with GitHub standard runners"
+
+          # Switch back to the dev branch
+          git checkout dev
+          # Overwrite dev with the content of rebase/upstream (which contains the rebase + runner patches)
+          git reset --hard rebase/upstream
+          # Force-push dev to origin
+          # --force-with-lease=origin/dev verifies that origin/dev hasn't moved since our fetch
+          # If another run pushed in the meantime, this fails instead of overwriting its work
+          git push origin dev --force-with-lease=origin/dev
+
+          # Delete the local temporary branch (no longer needed, dev is up to date)
+          git branch -D rebase/upstream 2>/dev/null || true
+          # Also delete the remote branch if it existed from a previous run
+          git push origin --delete rebase/upstream 2>/dev/null || true
+
+      - name: Merge and create PR on conflict
+        # Only runs if: there are changes AND the rebase failed
+        if: steps.check.outputs.has_changes == 'true' && steps.rebase.outcome == 'failure'
+        run: |
+          # Abort the in-progress rebase (we're in a "rebase with conflict" state)
+          git rebase --abort 2>/dev/null || true
+
+          # Go back to dev and clean up everything to start fresh
+          git checkout dev 2>/dev/null || true
+          # Delete the local branch if it exists
+          git branch -D rebase/upstream 2>/dev/null || true
+          # Delete the remote branch if it exists (from a previous run)
+          git push origin --delete rebase/upstream 2>/dev/null || true
+
+          # Create the branch FROM origin/dev (not upstream/dev!)
+          # This is the key: the branch shares history with dev, so GitHub can create the PR
+          git checkout -b rebase/upstream origin/dev
+          # Merge upstream/dev into our branch
+          # --no-edit uses the default merge message without opening an editor
+          # If the merge has conflicts, we accept them as-is (conflict markers)
+          # and commit anyway so the reviewer can resolve them in the PR
+          if ! git merge upstream/dev --no-edit; then
+            echo "Merge has conflicts — committing with conflict markers for manual resolution"
+            # Collect the list of files with conflict markers before staging
+            CONFLICTED_FILES=$(grep -rl "<<<<<<< HEAD" . --include="*" | grep -v ".git/" | sort)
+            # Stage all files (including those with <<<<<<< conflict markers)
+            git add -A
+            git commit --no-edit -m "sync(opencode): merge upstream/dev (has conflicts to resolve)"
+            HAS_CONFLICTS=true
+          else
+            CONFLICTED_FILES=""
+            HAS_CONFLICTS=false
+          fi
+
+          # Same runner patches as in the rebase OK case
+          sed -i -E 's/(runs-on|host|runner): [a-zA-Z]+-[a-zA-Z0-9_-]*(ubuntu|linux)[a-zA-Z0-9_-]*/\1: ubuntu-24.04/g' .github/workflows/*.yml
+          sed -i -E 's/(runs-on|host|runner): [a-zA-Z]+-[a-zA-Z0-9_-]*(windows)[a-zA-Z0-9_-]*/\1: windows-latest/g' .github/workflows/*.yml
+          git add .github/workflows/*.yml
+          git diff --cached --quiet || git commit -m "chore(ci): replace third-party runners with GitHub standard runners"
+
+          # Push the branch to origin so GitHub can create the PR
+          git push origin rebase/upstream
+
+          # Build the PR description with the list of conflicted files if any
+          if [ "$HAS_CONFLICTS" = "true" ]; then
+            # Format each conflicted file as a markdown checkbox for easy tracking
+            FILE_LIST=$(echo "$CONFLICTED_FILES" | sed 's|^\./||' | while read -r f; do echo "- [ ] \`$f\`"; done)
+            PR_BODY="Automatic rebase failed and merge has conflicts."
+            PR_BODY="${PR_BODY}"$'\n\n'"## Files with conflict markers (\`<<<<<<<\`)"
+            PR_BODY="${PR_BODY}"$'\n\n'"${FILE_LIST}"
+            PR_BODY="${PR_BODY}"$'\n\n'"> Only these files need your attention. All other files are clean upstream changes."
+          else
+            PR_BODY="Automatic rebase failed but merge completed cleanly. Please review and merge."
+          fi
+
+          # Create the PR: base = dev (our main branch), head = rebase/upstream (the branch with the merge)
+          # --repo is REQUIRED because gh defaults to the parent repo in a fork context
+          # Without it, gh tries to create the PR on anomalyco/opencode instead of our fork
+          gh pr create --base dev --head rebase/upstream \
+            --repo "${{ github.repository }}" \
+            --title "Sync upstream $(date +%Y-%m-%d)" \
+            --body "$PR_BODY"
+        env:
+          # Token required for gh pr create
+          GH_TOKEN: ${{ secrets.SYNC_TOKEN }}
+
+      - name: Disable upstream workflows
+        # always() = runs even if previous steps failed
+        # We always want to disable upstream workflows imported into the fork
+        if: always()
+        run: |
+          # The repo we're working on (concrete-security/private-opencode)
+          REPO="${{ github.repository }}"
+          # Whitelist: workflows we want to keep active
+          KEEP="private-publish.yml sync-upstream.yml test.yml typecheck.yml nix-eval.yml"
+          # List all active workflows in the repo as JSON, extract their paths
+          gh workflow list --all -q '.[] | select(.state=="active") | .path' --json state,path --repo "$REPO" | while read -r path; do
+            # Extract the filename (e.g. .github/workflows/build.yml -> build.yml)
+            name=$(basename "$path")
+            # If the workflow is NOT in the whitelist, disable it
+            # grep -qw searches for the exact word (-w) in silent mode (-q)
+            if ! echo "$KEEP" | grep -qw "$name"; then
+              echo "Disabling $name"
+              # Disable the workflow so it no longer triggers
+              gh workflow disable "$name" --repo "$REPO"
+            fi
+          done
+        env:
+          GH_TOKEN: ${{ secrets.SYNC_TOKEN }}
