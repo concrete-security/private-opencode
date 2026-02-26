@@ -1,0 +1,111 @@
+name: Sync Fork with Upstream
+
+on:
+  schedule:
+    - cron: "0 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  actions: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.SYNC_TOKEN }}
+
+      - name: Configure git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git remote set-url origin "https://x-access-token:${SYNC_TOKEN}@github.com/${{ github.repository }}.git"
+        env:
+          SYNC_TOKEN: ${{ secrets.SYNC_TOKEN }}
+
+      - name: Fetch upstream
+        run: |
+          git remote add upstream https://github.com/anomalyco/opencode.git || true
+          git fetch upstream
+
+      - name: Check for new changes
+        id: check
+        run: |
+          if git diff --quiet origin/dev upstream/dev; then
+            echo "No new changes from upstream, nothing to do"
+            echo "has_changes=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_changes=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Rebase on upstream
+        id: rebase
+        if: steps.check.outputs.has_changes == 'true'
+        continue-on-error: true
+        run: |
+          # Clean up leftover branch from previous runs
+          git branch -D rebase/upstream 2>/dev/null || true
+
+          # Work on a temporary branch to keep dev safe
+          git checkout -b rebase/upstream origin/dev
+          git rebase upstream/dev
+
+          # Rebase succeeded — apply runner patches and update dev
+          sed -i -E 's/(runs-on|host|runner): [a-zA-Z]+-[a-zA-Z0-9_-]*(ubuntu|linux)[a-zA-Z0-9_-]*/\1: ubuntu-24.04/g' .github/workflows/*.yml
+          sed -i -E 's/(runs-on|host|runner): [a-zA-Z]+-[a-zA-Z0-9_-]*(windows)[a-zA-Z0-9_-]*/\1: windows-latest/g' .github/workflows/*.yml
+          git add .github/workflows/*.yml
+          git diff --cached --quiet || git commit -m "ci: replace third-party runners with GitHub standard runners"
+
+          git checkout dev
+          git reset --hard rebase/upstream
+          git push origin dev --force-with-lease
+
+          # Cleanup
+          git branch -D rebase/upstream
+
+      - name: Merge and create PR on conflict
+        if: steps.check.outputs.has_changes == 'true' && steps.rebase.outcome == 'failure'
+        run: |
+          git rebase --abort 2>/dev/null || true
+
+          # Clean up and start fresh from dev
+          git checkout dev 2>/dev/null || true
+          git branch -D rebase/upstream 2>/dev/null || true
+          git push origin --delete rebase/upstream 2>/dev/null || true
+
+          # Create branch from OUR dev, then merge upstream into it
+          git checkout -b rebase/upstream origin/dev
+          git merge upstream/dev --no-edit
+
+          # Apply runner patches
+          sed -i -E 's/(runs-on|host|runner): [a-zA-Z]+-[a-zA-Z0-9_-]*(ubuntu|linux)[a-zA-Z0-9_-]*/\1: ubuntu-24.04/g' .github/workflows/*.yml
+          sed -i -E 's/(runs-on|host|runner): [a-zA-Z]+-[a-zA-Z0-9_-]*(windows)[a-zA-Z0-9_-]*/\1: windows-latest/g' .github/workflows/*.yml
+          git add .github/workflows/*.yml
+          git diff --cached --quiet || git commit -m "ci: replace third-party runners with GitHub standard runners"
+
+          git push origin rebase/upstream
+
+          gh pr create --base dev --head rebase/upstream \
+            --title "Sync upstream $(date +%Y-%m-%d)" \
+            --body "Automatic rebase failed due to conflicts. Please review and merge."
+        env:
+          GH_TOKEN: ${{ secrets.SYNC_TOKEN }}
+
+      - name: Disable upstream workflows
+        if: always()
+        run: |
+          REPO="${{ github.repository }}"
+          KEEP="private-publish.yml sync-upstream.yml test.yml typecheck.yml nix-eval.yml"
+          gh workflow list --all -q '.[] | select(.state=="active") | .path' --json state,path --repo "$REPO" | while read -r path; do
+            name=$(basename "$path")
+            if ! echo "$KEEP" | grep -qw "$name"; then
+              echo "Disabling $name"
+              gh workflow disable "$name" --repo "$REPO"
+            fi
+          done
+        env:
+          GH_TOKEN: ${{ secrets.SYNC_TOKEN }}
