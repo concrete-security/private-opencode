@@ -1145,7 +1145,7 @@ export namespace Provider {
       }
       const loaded = fn({
         name: model.providerID,
-        ...resolvedOptions,
+        ...options,
       })
       s.sdk.set(key, loaded)
       return loaded as SDK
