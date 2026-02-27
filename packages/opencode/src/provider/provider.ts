@@ -1135,14 +1135,17 @@ export namespace Provider {
       const mod = await import(installedPath)
 
       const fn = mod[Object.keys(mod).find((key) => key.startsWith("create"))!]
-      // Resolve bundled SDK for custom providers: pass the factory function instead of a string
-      const resolvedOptions =
-        typeof options.sdk === "string" && BUNDLED_PROVIDERS[options.sdk]
-          ? { ...options, sdk: BUNDLED_PROVIDERS[options.sdk] }
-          : options
+      if (typeof options.sdk === "string") {
+        const b = BUNDLED_PROVIDERS[options.sdk]
+        if (b) options.sdk = b
+        else {
+          const m = await import(await BunProc.install(options.sdk, "latest"))
+          options.sdk = m[Object.keys(m).find((k: string) => k.startsWith("create"))!]
+        }
+      }
       const loaded = fn({
         name: model.providerID,
-        ...resolvedOptions,
+        ...options,
       })
       s.sdk.set(key, loaded)
       return loaded as SDK
