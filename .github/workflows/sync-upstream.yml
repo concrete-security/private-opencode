@@ -8,6 +8,7 @@ on:
 permissions:
   contents: write
   pull-requests: write
+  actions: write
 
 jobs:
   sync:
@@ -16,7 +17,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.SYNC_TOKEN }}
 
       - name: Configure git identity
         run: |
@@ -52,4 +53,19 @@ jobs:
             --title "Sync upstream - conflicts $(date +%Y-%m-%d)" \
             --body "Rebase failed due to conflicts. Please resolve manually."
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.SYNC_TOKEN }}
+
+      - name: Disable upstream workflows
+        if: always()
+        run: |
+          # Disable all active workflows except ours
+          KEEP="private-publish.yml sync-upstream.yml test.yml typecheck.yml nix-eval.yml"
+          gh workflow list --all -q '.[] | select(.state=="active") | .path' --json state,path | while read -r path; do
+            name=$(basename "$path")
+            if ! echo "$KEEP" | grep -qw "$name"; then
+              echo "Disabling $name"
+              gh workflow disable "$name"
+            fi
+          done
+        env:
+          GH_TOKEN: ${{ secrets.SYNC_TOKEN }}
