@@ -45,15 +45,21 @@ jobs:
         if: steps.rebase.outcome == 'failure'
         run: |
           git rebase --abort
-          git checkout -b sync/conflict-$(date +%Y-%m-%d) upstream/dev
-          git merge origin/dev --no-edit || true
+
+          # Force origin to use our token (checkout sets it, but rebase --abort can lose it)
+          git remote set-url origin "https://x-access-token:${SYNC_TOKEN}@github.com/${{ github.repository }}.git"
+
+          BRANCH="sync/conflict-$(date +%Y-%m-%d)"
+          git checkout -b "$BRANCH" origin/dev
+          git merge upstream/dev --no-edit || true
           git add -A && git commit -m "sync: conflicts $(date +%Y-%m-%d)" --no-verify
-          git push origin sync/conflict-$(date +%Y-%m-%d)
-          gh pr create --base dev --head sync/conflict-$(date +%Y-%m-%d) \
+          git push origin "$BRANCH"
+          gh pr create --base dev --head "$BRANCH" \
             --title "Sync upstream - conflicts $(date +%Y-%m-%d)" \
             --body "Rebase failed due to conflicts. Please resolve manually."
         env:
           GH_TOKEN: ${{ secrets.SYNC_TOKEN }}
+          SYNC_TOKEN: ${{ secrets.SYNC_TOKEN }}
 
       - name: Disable upstream workflows
         if: always()
