@@ -121,7 +121,7 @@ jobs:
           # github-hosted: blacksmith lacks ARM64 MSVC cross-compilation toolchain
           - host: windows-2025
             target: aarch64-pc-windows-msvc
-          - host: blacksmith-4vcpu-windows-2025
+          - host: windows-latest
 >>>>>>> upstream/dev
             target: x86_64-pc-windows-msvc
           - host: ubuntu-24.04
