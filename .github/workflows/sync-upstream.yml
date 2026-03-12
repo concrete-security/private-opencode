@@ -158,7 +158,10 @@ jobs:
           fi
 
           # Create the PR: base = dev (our main branch), head = rebase/upstream (the branch with the merge)
+          # --repo is REQUIRED because gh defaults to the parent repo in a fork context
+          # Without it, gh tries to create the PR on anomalyco/opencode instead of our fork
           gh pr create --base dev --head rebase/upstream \
+            --repo "${{ github.repository }}" \
             --title "Sync upstream $(date +%Y-%m-%d)" \
             --body "$PR_BODY"
         env:
