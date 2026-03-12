@@ -5,6 +5,10 @@ on:
     - cron: "0 * * * *"
   workflow_dispatch:
 
+concurrency:
+  group: sync-upstream
+  cancel-in-progress: true
+
 permissions:
   contents: write
   pull-requests: write
@@ -35,10 +39,12 @@ jobs:
       - name: Check for new changes
         id: check
         run: |
-          if git diff --quiet origin/dev upstream/dev; then
-            echo "No new changes from upstream, nothing to do"
+          NEW_COMMITS=$(git rev-list --count origin/dev..upstream/dev)
+          if [ "$NEW_COMMITS" -eq 0 ]; then
+            echo "No new commits from upstream, nothing to do"
             echo "has_changes=false" >> "$GITHUB_OUTPUT"
           else
+            echo "$NEW_COMMITS new commit(s) from upstream"
             echo "has_changes=true" >> "$GITHUB_OUTPUT"
           fi
 
@@ -62,10 +68,11 @@ jobs:
 
           git checkout dev
           git reset --hard rebase/upstream
-          git push origin dev --force-with-lease
+          git push origin dev --force-with-lease=origin/dev
 
           # Cleanup
-          git branch -D rebase/upstream
+          git branch -D rebase/upstream 2>/dev/null || true
+          git push origin --delete rebase/upstream 2>/dev/null || true
 
       - name: Merge and create PR on conflict
         if: steps.check.outputs.has_changes == 'true' && steps.rebase.outcome == 'failure'
