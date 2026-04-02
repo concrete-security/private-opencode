@@ -19,17 +19,17 @@ import { useSync } from "@tui/context/sync"
 import { SplitBorder } from "@tui/component/border"
 import { Spinner } from "@tui/component/spinner"
 import { selectedForeground, useTheme } from "@tui/context/theme"
-import {
-  BoxRenderable,
-  ScrollBoxRenderable,
-  addDefaultParsers,
-  MacOSScrollAccel,
-  type ScrollAcceleration,
-  TextAttributes,
-  RGBA,
-} from "@opentui/core"
+import { BoxRenderable, ScrollBoxRenderable, addDefaultParsers, TextAttributes, RGBA } from "@opentui/core"
 import { Prompt, type PromptRef } from "@tui/component/prompt"
-import type { AssistantMessage, Part, ToolPart, UserMessage, TextPart, ReasoningPart } from "@opencode-ai/sdk/v2"
+import type {
+  AssistantMessage,
+  Part,
+  Provider,
+  ToolPart,
+  UserMessage,
+  TextPart,
+  ReasoningPart,
+} from "@opencode-ai/sdk/v2"
 import { useLocal } from "@tui/context/local"
 import { Locale } from "@/util/locale"
 import type { Tool } from "@/tool/tool"
@@ -77,22 +77,14 @@ import { Global } from "@/global"
 import { PermissionPrompt } from "./permission"
 import { QuestionPrompt } from "./question"
 import { DialogExportOptions } from "../../ui/dialog-export-options"
+import * as Model from "../../util/model"
 import { formatTranscript } from "../../util/transcript"
 import { getAtlsStatus, getSecurityIndicator } from "../../util/provider"
 import { UI } from "@/cli/ui.ts"
 import { useTuiConfig } from "../../context/tui-config"
+import { getScrollAcceleration } from "../../util/scroll"
 
 addDefaultParsers(parsers.parsers)
-
-class CustomSpeedScroll implements ScrollAcceleration {
-  constructor(private speed: number) {}
-
-  tick(_now?: number): number {
-    return this.speed
-  }
-
-  reset(): void {}
-}
 
 const context = createContext<{
   width: number
@@ -103,6 +95,7 @@ const context = createContext<{
   showDetails: () => boolean
   showGenericToolOutput: () => boolean
   diffWrapMode: () => "word" | "none"
+  providers: () => ReadonlyMap<string, Provider>
   sync: ReturnType<typeof useSync>
   tui: ReturnType<typeof useTuiConfig>
 }>()
@@ -168,18 +161,9 @@ export function Session() {
   })
   const showTimestamps = createMemo(() => timestamps() === "show")
   const contentWidth = createMemo(() => dimensions().width - (sidebarVisible() ? 42 : 0) - 4)
+  const providers = createMemo(() => Model.index(sync.data.provider))
 
-  const scrollAcceleration = createMemo(() => {
-    const tui = tuiConfig
-    if (tui?.scroll_acceleration?.enabled) {
-      return new MacOSScrollAccel()
-    }
-    if (tui?.scroll_speed) {
-      return new CustomSpeedScroll(tui.scroll_speed)
-    }
-
-    return new CustomSpeedScroll(3)
-  })
+  const scrollAcceleration = createMemo(() => getScrollAcceleration(tuiConfig))
 
   createEffect(() => {
     if (session()?.workspaceID) {
@@ -376,6 +360,11 @@ export function Session() {
           await copy(url)
           dialog.clear()
           return
+        }
+        if (!kv.get("share_consent", false)) {
+          const ok = await DialogConfirm.show(dialog, "Share Session", "Are you sure you want to share it?")
+          if (ok !== true) return
+          kv.set("share_consent", true)
         }
         await sdk.client.session
           .share({
@@ -842,6 +831,7 @@ export function Session() {
               thinking: showThinking(),
               toolDetails: showDetails(),
               assistantMetadata: showAssistantMetadata(),
+              providers: sync.data.provider,
             },
           )
           await Clipboard.copy(transcript)
@@ -886,6 +876,7 @@ export function Session() {
               thinking: options.thinking,
               toolDetails: options.toolDetails,
               assistantMetadata: options.assistantMetadata,
+              providers: sync.data.provider,
             },
           )
 
@@ -1031,6 +1022,7 @@ export function Session() {
         showDetails,
         showGenericToolOutput,
         diffWrapMode,
+        providers,
         sync,
         tui: tuiConfig,
       }}
@@ -1315,10 +1307,12 @@ function UserMessage(props: {
 }
 
 function AssistantMessage(props: { message: AssistantMessage; parts: Part[]; last: boolean }) {
+  const ctx = use()
   const local = useLocal()
   const { theme } = useTheme()
   const sync = useSync()
   const messages = createMemo(() => sync.data.message[props.message.sessionID] ?? [])
+  const model = createMemo(() => Model.name(ctx.providers(), props.message.providerID, props.message.modelID))
 
   const final = createMemo(() => {
     return props.message.finish && !["tool-calls", "unknown"].includes(props.message.finish)
@@ -1388,6 +1382,7 @@ function AssistantMessage(props: { message: AssistantMessage; parts: Part[]; las
                 ▣{" "}
               </span>{" "}
               <span style={{ fg: theme.text }}>{Locale.titlecase(props.message.mode)}</span>
+<<<<<<< HEAD
               {(() => {
                 const sync = useSync()
                 const provider = sync.data.provider.find(p => p.id === props.message.providerID)
@@ -1410,6 +1405,9 @@ function AssistantMessage(props: { message: AssistantMessage; parts: Part[]; las
                   </>
                 )
               })()}
+=======
+              <span style={{ fg: theme.textMuted }}> · {model()}</span>
+>>>>>>> upstream/dev
               <Show when={duration()}>
                 <span style={{ fg: theme.textMuted }}> · {Locale.duration(duration())}</span>
               </Show>
