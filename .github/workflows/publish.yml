@@ -113,8 +113,13 @@ jobs:
     needs:
       - build-cli
       - version
+<<<<<<< HEAD
     runs-on: windows-latest
     if: github.repository == 'anomalyco/opencode'
+=======
+    runs-on: blacksmith-4vcpu-windows-2025
+    if: github.repository == 'anomalyco/opencode' && github.ref_name != 'beta'
+>>>>>>> upstream/dev
     env:
       AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
       AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
@@ -213,6 +218,7 @@ jobs:
     needs:
       - build-cli
       - version
+    if: github.ref_name != 'beta'
     continue-on-error: false
     env:
       AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
@@ -386,6 +392,7 @@ jobs:
     needs:
       - build-cli
       - version
+    if: github.repository == 'anomalyco/opencode' && github.ref_name != 'beta'
     continue-on-error: false
     env:
       AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
@@ -414,7 +421,6 @@ jobs:
             target: aarch64-unknown-linux-gnu
             platform_flag: --linux
     runs-on: ${{ matrix.settings.host }}
-    # if: github.ref_name == 'beta'
     steps:
       - uses: actions/checkout@v3
 
@@ -540,7 +546,12 @@ jobs:
       - sign-cli-windows
       - build-tauri
       - build-electron
+<<<<<<< HEAD
     runs-on: ubuntu-24.04
+=======
+    if: always() && !failure() && !cancelled()
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+>>>>>>> upstream/dev
     steps:
       - uses: actions/checkout@v3
 
@@ -582,12 +593,13 @@ jobs:
           path: packages/opencode/dist
 
       - uses: actions/download-artifact@v4
+        if: github.ref_name != 'beta'
         with:
           name: opencode-cli-signed-windows
           path: packages/opencode/dist
 
       - uses: actions/download-artifact@v4
-        if: needs.version.outputs.release
+        if: needs.version.outputs.release && github.ref_name != 'beta'
         with:
           pattern: latest-yml-*
           path: /tmp/latest-yml
