@@ -183,6 +183,18 @@ export function addTheme(name: string, theme: unknown) {
   return true
 }
 
+export function upsertTheme(name: string, theme: unknown) {
+  if (!name) return false
+  if (!isTheme(theme)) return false
+  if (customThemes[name] !== undefined) {
+    customThemes[name] = theme
+  } else {
+    pluginThemes[name] = theme
+  }
+  syncThemes()
+  return true
+}
+
 export function resolveTheme(theme: ThemeJson, mode: "dark" | "light") {
   const defs = theme.defs ?? {}
   function resolveColor(c: ColorValue, chain: string[] = []): RGBA {
@@ -530,8 +542,10 @@ function generateSystem(colors: TerminalColors, mode: "dark" | "light"): ThemeJs
   const diffAlpha = isDark ? 0.22 : 0.14
   const diffAddedBg = tint(bg, ansiColors.green, diffAlpha)
   const diffRemovedBg = tint(bg, ansiColors.red, diffAlpha)
-  const diffAddedLineNumberBg = tint(grays[3], ansiColors.green, diffAlpha)
-  const diffRemovedLineNumberBg = tint(grays[3], ansiColors.red, diffAlpha)
+  const diffContextBg = grays[2]
+  const diffAddedLineNumberBg = tint(diffContextBg, ansiColors.green, diffAlpha)
+  const diffRemovedLineNumberBg = tint(diffContextBg, ansiColors.red, diffAlpha)
+  const diffLineNumber = textMuted
 
   return {
     theme: {
@@ -571,8 +585,8 @@ function generateSystem(colors: TerminalColors, mode: "dark" | "light"): ThemeJs
       diffHighlightRemoved: ansiColors.redBright,
       diffAddedBg,
       diffRemovedBg,
-      diffContextBg: grays[1],
-      diffLineNumber: grays[6],
+      diffContextBg,
+      diffLineNumber,
       diffAddedLineNumberBg,
       diffRemovedLineNumberBg,
 
