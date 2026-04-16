@@ -15,31 +15,32 @@ import {
 import { Dynamic } from "solid-js/web"
 import path from "path"
 import { useRoute, useRouteData } from "@tui/context/route"
+import { useProject } from "@tui/context/project"
 import { useSync } from "@tui/context/sync"
+import { useEvent } from "@tui/context/event"
 import { SplitBorder } from "@tui/component/border"
 import { Spinner } from "@tui/component/spinner"
 import { selectedForeground, useTheme } from "@tui/context/theme"
-import {
-  BoxRenderable,
-  ScrollBoxRenderable,
-  addDefaultParsers,
-  MacOSScrollAccel,
-  type ScrollAcceleration,
-  TextAttributes,
-  RGBA,
-} from "@opentui/core"
+import { BoxRenderable, ScrollBoxRenderable, addDefaultParsers, TextAttributes, RGBA } from "@opentui/core"
 import { Prompt, type PromptRef } from "@tui/component/prompt"
-import type { AssistantMessage, Part, ToolPart, UserMessage, TextPart, ReasoningPart } from "@opencode-ai/sdk/v2"
+import type {
+  AssistantMessage,
+  Part,
+  Provider,
+  ToolPart,
+  UserMessage,
+  TextPart,
+  ReasoningPart,
+} from "@opencode-ai/sdk/v2"
 import { useLocal } from "@tui/context/local"
-import { Locale } from "@/util/locale"
-import type { Tool } from "@/tool/tool"
+import { Locale } from "@/util"
+import type { Tool } from "@/tool"
 import type { ReadTool } from "@/tool/read"
 import type { WriteTool } from "@/tool/write"
 import { BashTool } from "@/tool/bash"
 import type { GlobTool } from "@/tool/glob"
 import { TodoWriteTool } from "@/tool/todo"
 import type { GrepTool } from "@/tool/grep"
-import type { ListTool } from "@/tool/ls"
 import type { EditTool } from "@/tool/edit"
 import type { ApplyPatchTool } from "@/tool/apply_patch"
 import type { WebFetchTool } from "@/tool/webfetch"
@@ -65,34 +66,33 @@ import { SubagentFooter } from "./subagent-footer.tsx"
 import { Flag } from "@/flag/flag"
 import { LANGUAGE_EXTENSIONS } from "@/lsp/language"
 import parsers from "../../../../../../parsers-config.ts"
-import { Clipboard } from "../../util/clipboard"
+import * as Clipboard from "../../util/clipboard"
 import { Toast, useToast } from "../../ui/toast"
 import { useKV } from "../../context/kv.tsx"
-import { Editor } from "../../util/editor"
+import * as Editor from "../../util/editor"
 import stripAnsi from "strip-ansi"
 import { usePromptRef } from "../../context/prompt"
 import { useExit } from "../../context/exit"
-import { Filesystem } from "@/util/filesystem"
+import { Filesystem } from "@/util"
 import { Global } from "@/global"
 import { PermissionPrompt } from "./permission"
 import { QuestionPrompt } from "./question"
 import { DialogExportOptions } from "../../ui/dialog-export-options"
+import * as Model from "../../util/model"
 import { formatTranscript } from "../../util/transcript"
 import { getAtlsStatus, getSecurityIndicator } from "../../util/provider"
 import { UI } from "@/cli/ui.ts"
 import { useTuiConfig } from "../../context/tui-config"
+import { getScrollAcceleration } from "../../util/scroll"
+import { TuiPluginRuntime } from "../../plugin"
+import { DialogGoUpsell } from "../../component/dialog-go-upsell"
+import { SessionRetry } from "@/session/retry"
 
 addDefaultParsers(parsers.parsers)
 
-class CustomSpeedScroll implements ScrollAcceleration {
-  constructor(private speed: number) {}
-
-  tick(_now?: number): number {
-    return this.speed
-  }
-
-  reset(): void {}
-}
+const GO_UPSELL_LAST_SEEN_AT = "go_upsell_last_seen_at"
+const GO_UPSELL_DONT_SHOW = "go_upsell_dont_show"
+const GO_UPSELL_WINDOW = 86_400_000 // 24 hrs
 
 const context = createContext<{
   width: number
@@ -103,6 +103,7 @@ const context = createContext<{
   showDetails: () => boolean
   showGenericToolOutput: () => boolean
   diffWrapMode: () => "word" | "none"
+  providers: () => ReadonlyMap<string, Provider>
   sync: ReturnType<typeof useSync>
   tui: ReturnType<typeof useTuiConfig>
 }>()
@@ -117,6 +118,8 @@ export function Session() {
   const route = useRouteData("session")
   const { navigate } = useRoute()
   const sync = useSync()
+  const event = useEvent()
+  const project = useProject()
   const tuiConfig = useTuiConfig()
   const kv = useKV()
   const { theme } = useTheme()
@@ -137,6 +140,8 @@ export function Session() {
     if (session()?.parentID) return []
     return children().flatMap((x) => sync.data.question[x.id] ?? [])
   })
+  const visible = createMemo(() => !session()?.parentID && permissions().length === 0 && questions().length === 0)
+  const disabled = createMemo(() => permissions().length > 0 || questions().length > 0)
 
   const pending = createMemo(() => {
     return messages().findLast((x) => x.role === "assistant" && !x.time.completed)?.id
@@ -153,10 +158,10 @@ export function Session() {
   const [showThinking, setShowThinking] = kv.signal("thinking_visibility", true)
   const [timestamps, setTimestamps] = kv.signal<"hide" | "show">("timestamps", "hide")
   const [showDetails, setShowDetails] = kv.signal("tool_details_visibility", true)
-  const [showAssistantMetadata, setShowAssistantMetadata] = kv.signal("assistant_metadata_visibility", true)
-  const [showScrollbar, setShowScrollbar] = kv.signal("scrollbar_visible", true)
+  const [showAssistantMetadata, _setShowAssistantMetadata] = kv.signal("assistant_metadata_visibility", true)
+  const [showScrollbar, setShowScrollbar] = kv.signal("scrollbar_visible", false)
   const [diffWrapMode] = kv.signal<"word" | "none">("diff_wrap_mode", "word")
-  const [animationsEnabled, setAnimationsEnabled] = kv.signal("animations_enabled", true)
+  const [_animationsEnabled, _setAnimationsEnabled] = kv.signal("animations_enabled", true)
   const [showGenericToolOutput, setShowGenericToolOutput] = kv.signal("generic_tool_output_visibility", false)
 
   const wide = createMemo(() => dimensions().width > 120)
@@ -168,28 +173,19 @@ export function Session() {
   })
   const showTimestamps = createMemo(() => timestamps() === "show")
   const contentWidth = createMemo(() => dimensions().width - (sidebarVisible() ? 42 : 0) - 4)
+  const providers = createMemo(() => Model.index(sync.data.provider))
 
-  const scrollAcceleration = createMemo(() => {
-    const tui = tuiConfig
-    if (tui?.scroll_acceleration?.enabled) {
-      return new MacOSScrollAccel()
-    }
-    if (tui?.scroll_speed) {
-      return new CustomSpeedScroll(tui.scroll_speed)
-    }
-
-    return new CustomSpeedScroll(3)
-  })
-
-  createEffect(() => {
-    if (session()?.workspaceID) {
-      sdk.setWorkspace(session()?.workspaceID)
-    }
-  })
+  const scrollAcceleration = createMemo(() => getScrollAcceleration(tuiConfig))
+  const toast = useToast()
+  const sdk = useSDK()
 
   createEffect(async () => {
-    await sync.session
-      .sync(route.sessionID)
+    await sdk.client.session
+      .get({ sessionID: route.sessionID }, { throwOnError: true })
+      .then((x) => {
+        project.workspace.set(x.data?.workspaceID)
+      })
+      .then(() => sync.session.sync(route.sessionID))
       .then(() => {
         if (scroll) scroll.scrollBy(100_000)
       })
@@ -203,18 +199,10 @@ export function Session() {
       })
   })
 
-  const toast = useToast()
-  const sdk = useSDK()
-
   // Handle initial prompt from fork
-  createEffect(() => {
-    if (route.initialPrompt && prompt) {
-      prompt.set(route.initialPrompt)
-    }
-  })
-
+  let seeded = false
   let lastSwitch: string | undefined = undefined
-  sdk.event.on("message.part.updated", (evt) => {
+  event.on("message.part.updated", (evt) => {
     const part = evt.properties.part
     if (part.type !== "tool") return
     if (part.sessionID !== route.sessionID) return
@@ -231,10 +219,34 @@ export function Session() {
   })
 
   let scroll: ScrollBoxRenderable
-  let prompt: PromptRef
+  let prompt: PromptRef | undefined
+  const bind = (r: PromptRef | undefined) => {
+    prompt = r
+    promptRef.set(r)
+    if (seeded || !route.initialPrompt || !r) return
+    seeded = true
+    r.set(route.initialPrompt)
+  }
   const keybind = useKeybind()
   const dialog = useDialog()
   const renderer = useRenderer()
+
+  event.on("session.status", (evt) => {
+    if (evt.properties.sessionID !== route.sessionID) return
+    if (evt.properties.status.type !== "retry") return
+    if (evt.properties.status.message !== SessionRetry.GO_UPSELL_MESSAGE) return
+    if (dialog.stack.length > 0) return
+
+    const seen = kv.get(GO_UPSELL_LAST_SEEN_AT)
+    if (typeof seen === "number" && Date.now() - seen < GO_UPSELL_WINDOW) return
+
+    if (kv.get(GO_UPSELL_DONT_SHOW)) return
+
+    void DialogGoUpsell.show(dialog).then((dontShowAgain) => {
+      if (dontShowAgain) kv.set(GO_UPSELL_DONT_SHOW, true)
+      kv.set(GO_UPSELL_LAST_SEEN_AT, Date.now())
+    })
+  })
 
   // Allow exit when in child session (prompt is hidden)
   const exit = useExit()
@@ -261,7 +273,7 @@ export function Session() {
   useKeyboard((evt) => {
     if (!session()?.parentID) return
     if (keybind.match("app_exit", evt)) {
-      exit()
+      void exit()
     }
   })
 
@@ -377,6 +389,11 @@ export function Session() {
           dialog.clear()
           return
         }
+        if (!kv.get("share_consent", false)) {
+          const ok = await DialogConfirm.show(dialog, "Share Session", "Are you sure you want to share it?")
+          if (ok !== true) return
+          kv.set("share_consent", true)
+        }
         await sdk.client.session
           .share({
             sessionID: route.sessionID,
@@ -421,7 +438,7 @@ export function Session() {
               if (child) scroll.scrollBy(child.y - scroll.y - 1)
             }}
             sessionID={route.sessionID}
-            setPrompt={(promptInfo) => prompt.set(promptInfo)}
+            setPrompt={(promptInfo) => prompt?.set(promptInfo)}
           />
         ))
       },
@@ -467,7 +484,7 @@ export function Session() {
           })
           return
         }
-        sdk.client.session.summarize({
+        void sdk.client.session.summarize({
           sessionID: route.sessionID,
           modelID: selectedModel.modelID,
           providerID: selectedModel.providerID,
@@ -513,7 +530,7 @@ export function Session() {
         const revert = session()?.revert?.messageID
         const message = messages().findLast((x) => (!revert || x.id < revert) && x.role === "user")
         if (!message) return
-        sdk.client.session
+        void sdk.client.session
           .revert({
             sessionID: route.sessionID,
             messageID: message.id,
@@ -522,7 +539,7 @@ export function Session() {
             toBottom()
           })
         const parts = sync.data.part[message.id]
-        prompt.set(
+        prompt?.set(
           parts.reduce(
             (agg, part) => {
               if (part.type === "text") {
@@ -552,13 +569,13 @@ export function Session() {
         if (!messageID) return
         const message = messages().find((x) => x.role === "user" && x.id > messageID)
         if (!message) {
-          sdk.client.session.unrevert({
+          void sdk.client.session.unrevert({
             sessionID: route.sessionID,
           })
-          prompt.set({ input: "", parts: [] })
+          prompt?.set({ input: "", parts: [] })
           return
         }
-        sdk.client.session.revert({
+        void sdk.client.session.revert({
           sessionID: route.sessionID,
           messageID: message.id,
         })
@@ -842,11 +859,12 @@ export function Session() {
               thinking: showThinking(),
               toolDetails: showDetails(),
               assistantMetadata: showAssistantMetadata(),
+              providers: sync.data.provider,
             },
           )
           await Clipboard.copy(transcript)
           toast.show({ message: "Session transcript copied to clipboard!", variant: "success" })
-        } catch (error) {
+        } catch {
           toast.show({ message: "Failed to copy session transcript", variant: "error" })
         }
         dialog.clear()
@@ -886,6 +904,7 @@ export function Session() {
               thinking: options.thinking,
               toolDetails: options.toolDetails,
               assistantMetadata: options.assistantMetadata,
+              providers: sync.data.provider,
             },
           )
 
@@ -907,7 +926,7 @@ export function Session() {
 
             toast.show({ message: `Session exported to ${filename}`, variant: "success" })
           }
-        } catch (error) {
+        } catch {
           toast.show({ message: "Failed to export session", variant: "error" })
         }
         dialog.clear()
@@ -992,7 +1011,7 @@ export function Session() {
           ),
         }
       })
-    } catch (error) {
+    } catch {
       return []
     }
   })
@@ -1031,6 +1050,7 @@ export function Session() {
         showDetails,
         showGenericToolOutput,
         diffWrapMode,
+        providers,
         sync,
         tui: tuiConfig,
       }}
@@ -1133,7 +1153,7 @@ export function Session() {
                             <DialogMessage
                               messageID={message.id}
                               sessionID={route.sessionID}
-                              setPrompt={(promptInfo) => prompt.set(promptInfo)}
+                              setPrompt={(promptInfo) => prompt?.set(promptInfo)}
                             />
                           ))
                         }}
@@ -1163,22 +1183,28 @@ export function Session() {
               <Show when={session()?.parentID}>
                 <SubagentFooter />
               </Show>
-              <Prompt
-                visible={!session()?.parentID && permissions().length === 0 && questions().length === 0}
-                ref={(r) => {
-                  prompt = r
-                  promptRef.set(r)
-                  // Apply initial prompt when prompt component mounts (e.g., from fork)
-                  if (route.initialPrompt) {
-                    r.set(route.initialPrompt)
-                  }
-                }}
-                disabled={permissions().length > 0 || questions().length > 0}
-                onSubmit={() => {
-                  toBottom()
-                }}
-                sessionID={route.sessionID}
-              />
+              <Show when={visible()}>
+                <TuiPluginRuntime.Slot
+                  name="session_prompt"
+                  mode="replace"
+                  session_id={route.sessionID}
+                  visible={visible()}
+                  disabled={disabled()}
+                  on_submit={toBottom}
+                  ref={bind}
+                >
+                  <Prompt
+                    visible={visible()}
+                    ref={bind}
+                    disabled={disabled()}
+                    onSubmit={() => {
+                      toBottom()
+                    }}
+                    sessionID={route.sessionID}
+                    right={<TuiPluginRuntime.Slot name="session_prompt_right" session_id={route.sessionID} />}
+                  />
+                </TuiPluginRuntime.Slot>
+              </Show>
             </box>
           </Show>
           <Toast />
@@ -1315,10 +1341,12 @@ function UserMessage(props: {
 }
 
 function AssistantMessage(props: { message: AssistantMessage; parts: Part[]; last: boolean }) {
+  const ctx = use()
   const local = useLocal()
   const { theme } = useTheme()
   const sync = useSync()
   const messages = createMemo(() => sync.data.message[props.message.sessionID] ?? [])
+  const model = createMemo(() => Model.name(ctx.providers(), props.message.providerID, props.message.modelID))
 
   const final = createMemo(() => {
     return props.message.finish && !["tool-calls", "unknown"].includes(props.message.finish)
@@ -1388,6 +1416,7 @@ function AssistantMessage(props: { message: AssistantMessage; parts: Part[]; las
                 ▣{" "}
               </span>{" "}
               <span style={{ fg: theme.text }}>{Locale.titlecase(props.message.mode)}</span>
+<<<<<<< HEAD
               {(() => {
                 const sync = useSync()
                 const provider = sync.data.provider.find(p => p.id === props.message.providerID)
@@ -1410,6 +1439,9 @@ function AssistantMessage(props: { message: AssistantMessage; parts: Part[]; las
                   </>
                 )
               })()}
+=======
+              <span style={{ fg: theme.textMuted }}> · {model()}</span>
+>>>>>>> upstream/dev
               <Show when={duration()}>
                 <span style={{ fg: theme.textMuted }}> · {Locale.duration(duration())}</span>
               </Show>
@@ -1548,9 +1580,6 @@ function ToolPart(props: { last: boolean; part: ToolPart; message: AssistantMess
         <Match when={props.part.tool === "grep"}>
           <Grep {...toolprops} />
         </Match>
-        <Match when={props.part.tool === "list"}>
-          <List {...toolprops} />
-        </Match>
         <Match when={props.part.tool === "webfetch"}>
           <WebFetch {...toolprops} />
         </Match>
@@ -1589,7 +1618,7 @@ function ToolPart(props: { last: boolean; part: ToolPart; message: AssistantMess
   )
 }
 
-type ToolProps<T extends Tool.Info> = {
+type ToolProps<T> = {
   input: Partial<Tool.InferParameters<T>>
   metadata: Partial<Tool.InferMetadata<T>>
   permission: Record<string, any>
@@ -1791,7 +1820,7 @@ function Bash(props: ToolProps<typeof BashTool>) {
     const workdir = props.input.workdir
     if (!workdir || workdir === ".") return undefined
 
-    const base = sync.data.path.directory
+    const base = sync.path.directory
     if (!base) return undefined
 
     const absolute = path.resolve(base, workdir)
@@ -1929,20 +1958,6 @@ function Grep(props: ToolProps<typeof GrepTool>) {
   )
 }
 
-function List(props: ToolProps<typeof ListTool>) {
-  const dir = createMemo(() => {
-    if (props.input.path) {
-      return normalizePath(props.input.path)
-    }
-    return ""
-  })
-  return (
-    <InlineTool icon="→" pending="Listing directory..." complete={props.input.path !== undefined} part={props.part}>
-      List {dir()}
-    </InlineTool>
-  )
-}
-
 function WebFetch(props: ToolProps<typeof WebFetchTool>) {
   return (
     <InlineTool icon="%" pending="Fetching from the web..." complete={(props.input as any).url} part={props.part}>
@@ -1977,7 +1992,7 @@ function Task(props: ToolProps<typeof TaskTool>) {
 
   onMount(() => {
     if (props.metadata.sessionId && !sync.data.message[props.metadata.sessionId]?.length)
-      sync.session.sync(props.metadata.sessionId)
+      void sync.session.sync(props.metadata.sessionId)
   })
 
   const messages = createMemo(() => sync.data.message[props.metadata.sessionId ?? ""] ?? [])
@@ -2147,7 +2162,7 @@ function ApplyPatch(props: ToolProps<typeof ApplyPatchTool>) {
                   </text>
                 }
               >
-                <Diff diff={file.diff} filePath={file.filePath} />
+                <Diff diff={file.patch} filePath={file.filePath} />
                 <Diagnostics diagnostics={props.metadata.diagnostics} filePath={file.movePath ?? file.filePath} />
               </Show>
             </BlockTool>
@@ -2188,7 +2203,7 @@ function Question(props: ToolProps<typeof QuestionTool>) {
   const { theme } = useTheme()
   const count = createMemo(() => props.input.questions?.length ?? 0)
 
-  function format(answer?: string[]) {
+  function format(answer?: ReadonlyArray<string>) {
     if (!answer?.length) return "(no answer)"
     return answer.join(", ")
   }

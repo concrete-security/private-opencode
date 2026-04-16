@@ -1,13 +1,18 @@
 import { useSync } from "@tui/context/sync"
 import { createMemo, Show } from "solid-js"
 import { useTheme } from "../../context/theme"
-import { Installation } from "@/installation"
+import { useTuiConfig } from "../../context/tui-config"
+import { InstallationVersion } from "@/installation/version"
 import { TuiPluginRuntime } from "../../plugin"
+
+import { getScrollAcceleration } from "../../util/scroll"
 
 export function Sidebar(props: { sessionID: string; overlay?: boolean }) {
   const sync = useSync()
   const { theme } = useTheme()
+  const tuiConfig = useTuiConfig()
   const session = createMemo(() => sync.session.get(props.sessionID))
+  const scrollAcceleration = createMemo(() => getScrollAcceleration(tuiConfig))
 
   return (
     <Show when={session()}>
@@ -23,6 +28,7 @@ export function Sidebar(props: { sessionID: string; overlay?: boolean }) {
       >
         <scrollbox
           flexGrow={1}
+          scrollAcceleration={scrollAcceleration()}
           verticalScrollbarOptions={{
             trackOptions: {
               backgroundColor: theme.background,
@@ -58,7 +64,7 @@ export function Sidebar(props: { sessionID: string; overlay?: boolean }) {
               <span style={{ fg: theme.text }}>
                 <b>Code</b>
               </span>{" "}
-              <span>{Installation.VERSION}</span>
+              <span>{InstallationVersion}</span>
             </text>
           </TuiPluginRuntime.Slot>
         </box>
