@@ -3,18 +3,16 @@ import fs from "fs/promises"
 import path from "path"
 import { tmpdir } from "../../fixture/fixture"
 import * as App from "../../../src/cli/cmd/tui/app"
-import { Rpc } from "../../../src/util/rpc"
+import { Rpc } from "@/util/rpc"
 import { UI } from "../../../src/cli/ui"
 import * as Timeout from "../../../src/util/timeout"
 import * as Network from "../../../src/cli/network"
 import * as Win32 from "../../../src/cli/cmd/tui/win32"
-import { TuiConfig } from "../../../src/config/tui"
-import { Instance } from "../../../src/project/instance"
+import { TuiConfig } from "../../../src/cli/cmd/tui/config/tui"
 
 const stop = new Error("stop")
 const seen = {
   tui: [] as string[],
-  inst: [] as string[],
 }
 
 function setup() {
@@ -42,11 +40,6 @@ function setup() {
   })
   spyOn(Win32, "win32DisableProcessedInput").mockImplementation(() => {})
   spyOn(Win32, "win32InstallCtrlCGuard").mockReturnValue(undefined)
-  spyOn(TuiConfig, "get").mockResolvedValue({})
-  spyOn(Instance, "provide").mockImplementation(async (input) => {
-    seen.inst.push(input.directory)
-    return input.fn()
-  })
 }
 
 describe("tui thread", () => {
@@ -78,15 +71,14 @@ describe("tui thread", () => {
 
   async function check(project?: string) {
     setup()
-    await using tmp = await tmpdir({ git: true })
     const cwd = process.cwd()
     const pwd = process.env.PWD
     const worker = globalThis.Worker
     const tty = Object.getOwnPropertyDescriptor(process.stdin, "isTTY")
+    await using tmp = await tmpdir({ git: true })
     const link = path.join(path.dirname(tmp.path), path.basename(tmp.path) + "-link")
     const type = process.platform === "win32" ? "junction" : "dir"
     seen.tui.length = 0
-    seen.inst.length = 0
     await fs.symlink(tmp.path, link, type)
 
     Object.defineProperty(process.stdin, "isTTY", {
@@ -105,7 +97,6 @@ describe("tui thread", () => {
       process.chdir(tmp.path)
       process.env.PWD = link
       await expect(call(project)).rejects.toBe(stop)
-      expect(seen.inst[0]).toBe(tmp.path)
       expect(seen.tui[0]).toBe(tmp.path)
     } finally {
       process.chdir(cwd)
@@ -118,11 +109,12 @@ describe("tui thread", () => {
     }
   }
 
-  test("uses the real cwd when PWD points at a symlink", async () => {
+  // serial because both modify real env vars
+  test.serial("uses the real cwd when PWD points at a symlink", async () => {
     await check()
   })
 
-  test("uses the real cwd after resolving a relative project from PWD", async () => {
+  test.serial("uses the real cwd after resolving a relative project from PWD", async () => {
     await check(".")
   })
 })
