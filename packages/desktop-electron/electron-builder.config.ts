@@ -27,18 +27,13 @@ const channel = (() => {
 })()
 
 const getBase = (): Configuration => ({
-  artifactName: "opencode-electron-${os}-${arch}.${ext}",
+  artifactName: "opencode-desktop-${os}-${arch}.${ext}",
   directories: {
     output: "dist",
     buildResources: "resources",
   },
   files: ["out/**/*", "resources/**/*"],
   extraResources: [
-    {
-      from: "resources/",
-      to: "",
-      filter: ["opencode-cli*"],
-    },
     {
       from: "native/",
       to: "native/",
@@ -68,6 +63,7 @@ const getBase = (): Configuration => ({
       sign: signWindows,
     },
     target: ["nsis"],
+    verifyUpdateCodeSignature: false,
   },
   nsis: {
     oneClick: false,
