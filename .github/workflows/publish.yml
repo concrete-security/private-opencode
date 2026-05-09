@@ -588,7 +588,7 @@ jobs:
     runs-on: ubuntu-24.04
 =======
     if: always() && !failure() && !cancelled()
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ubuntu-24.04
 >>>>>>> upstream/dev
     steps:
       - uses: actions/checkout@v3
