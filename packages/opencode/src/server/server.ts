@@ -1,312 +1,158 @@
-import { Log } from "../util/log"
-import { describeRoute, generateSpecs, validator, resolver, openAPIRouteHandler } from "hono-openapi"
-import { Hono } from "hono"
-import { compress } from "hono/compress"
-import { cors } from "hono/cors"
-import { basicAuth } from "hono/basic-auth"
-import z from "zod"
-import { Auth } from "../auth"
-import { Flag } from "../flag/flag"
-import { ProviderID } from "../provider/schema"
-import { WorkspaceRouterMiddleware } from "./router"
-import { websocket } from "hono/bun"
-import { errors } from "./error"
-import { GlobalRoutes } from "./routes/global"
+import * as Log from "@opencode-ai/core/util/log"
+import { ConfigProvider, Context, Effect, Exit, Layer, Scope } from "effect"
+import { HttpRouter, HttpServer } from "effect/unstable/http"
+import { OpenApi } from "effect/unstable/httpapi"
+import * as HttpApiServer from "#httpapi-server"
 import { MDNS } from "./mdns"
-import { lazy } from "@/util/lazy"
-import { errorHandler } from "./middleware"
-import { InstanceRoutes } from "./instance"
 import { initProjectors } from "./projectors"
+import { ExperimentalHttpApiServer } from "./routes/instance/httpapi/server"
+import { disposeMiddleware } from "./routes/instance/httpapi/lifecycle"
+import { WebSocketTracker } from "./routes/instance/httpapi/websocket-tracker"
+import { PublicApi } from "./routes/instance/httpapi/public"
+import type { CorsOptions } from "./cors"
 
 // @ts-ignore This global is needed to prevent ai-sdk from logging warnings to stdout https://github.com/vercel/ai/blob/2dc67e0ef538307f21368db32d5a12345d98831b/packages/ai/src/logger/log-warnings.ts#L85
 globalThis.AI_SDK_LOG_WARNINGS = false
 
 initProjectors()
 
-export namespace Server {
-  const log = Log.create({ service: "server" })
+const log = Log.create({ service: "server" })
 
-  const zipped = compress()
+export type Listener = {
+  hostname: string
+  port: number
+  url: URL
+  stop: (close?: boolean) => Promise<void>
+}
 
-  const skipCompress = (path: string, method: string) => {
-    if (path === "/event" || path === "/global/event" || path === "/global/sync-event") return true
-    if (method === "POST" && /\/session\/[^/]+\/(message|prompt_async)$/.test(path)) return true
-    return false
+type ServerApp = {
+  fetch(request: Request): Response | Promise<Response>
+  request(input: string | URL | Request, init?: RequestInit): Response | Promise<Response>
+}
+
+type ListenOptions = CorsOptions & {
+  port: number
+  hostname: string
+  mdns?: boolean
+  mdnsDomain?: string
+}
+
+const defaultHttpApi = (() => {
+  const handler = ExperimentalHttpApiServer.webHandler().handler
+  const app: ServerApp = {
+    fetch: (request: Request) => handler(request, ExperimentalHttpApiServer.context),
+    request(input, init) {
+      return app.fetch(input instanceof Request ? input : new Request(new URL(input, "http://localhost"), init))
+    },
   }
+  return { app }
+})()
 
-  export const Default = lazy(() => ControlPlaneRoutes())
+export const Default = () => defaultHttpApi
 
-  export const ControlPlaneRoutes = (opts?: { cors?: string[] }): Hono => {
-    const app = new Hono()
-    return app
-      .onError(errorHandler(log))
-      .use((c, next) => {
-        // Allow CORS preflight requests to succeed without auth.
-        // Browser clients sending Authorization headers will preflight with OPTIONS.
-        if (c.req.method === "OPTIONS") return next()
-        const password = Flag.OPENCODE_SERVER_PASSWORD
-        if (!password) return next()
-        const username = Flag.OPENCODE_SERVER_USERNAME ?? "opencode"
-        return basicAuth({ username, password })(c, next)
-      })
-      .use(async (c, next) => {
-        const skip = c.req.path === "/log"
-        if (!skip) {
-          log.info("request", {
-            method: c.req.method,
-            path: c.req.path,
-          })
-        }
-        const timer = log.time("request", {
-          method: c.req.method,
-          path: c.req.path,
-        })
-        await next()
-        if (!skip) {
-          timer.stop()
-        }
-      })
-      .use(
-        cors({
-          maxAge: 86_400,
-          origin(input) {
-            if (!input) return
+export async function openapi() {
+  return OpenApi.fromApi(PublicApi)
+}
 
-            if (input.startsWith("http://localhost:")) return input
-            if (input.startsWith("http://127.0.0.1:")) return input
-            if (
-              input === "tauri://localhost" ||
-              input === "http://tauri.localhost" ||
-              input === "https://tauri.localhost"
-            )
-              return input
+export let url: URL
 
-            // *.opencode.ai (https only, adjust if needed)
-            if (/^https:\/\/([a-z0-9-]+\.)*opencode\.ai$/.test(input)) {
-              return input
-            }
-            if (opts?.cors?.includes(input)) {
-              return input
-            }
+export async function listen(opts: ListenOptions): Promise<Listener> {
+  log.info("server backend", { "opencode.server.runtime": HttpApiServer.name })
 
-            return
-          },
-        }),
-      )
-      .use((c, next) => {
-        if (skipCompress(c.req.path, c.req.method)) return next()
-        return zipped(c, next)
-      })
-      .route("/global", GlobalRoutes())
-      .put(
-        "/auth/:providerID",
-        describeRoute({
-          summary: "Set auth credentials",
-          description: "Set authentication credentials",
-          operationId: "auth.set",
-          responses: {
-            200: {
-              description: "Successfully set authentication credentials",
-              content: {
-                "application/json": {
-                  schema: resolver(z.boolean()),
-                },
-              },
-            },
-            ...errors(400),
-          },
-        }),
-        validator(
-          "param",
-          z.object({
-            providerID: ProviderID.zod,
-          }),
-        ),
-        validator("json", Auth.Info.zod),
-        async (c) => {
-          const providerID = c.req.valid("param").providerID
-          const info = c.req.valid("json")
-          await Auth.set(providerID, info)
-          return c.json(true)
-        },
-      )
-      .delete(
-        "/auth/:providerID",
-        describeRoute({
-          summary: "Remove auth credentials",
-          description: "Remove authentication credentials",
-          operationId: "auth.remove",
-          responses: {
-            200: {
-              description: "Successfully removed authentication credentials",
-              content: {
-                "application/json": {
-                  schema: resolver(z.boolean()),
-                },
-              },
-            },
-            ...errors(400),
-          },
-        }),
-        validator(
-          "param",
-          z.object({
-            providerID: ProviderID.zod,
-          }),
-        ),
-        async (c) => {
-          const providerID = c.req.valid("param").providerID
-          await Auth.remove(providerID)
-          return c.json(true)
-        },
-      )
-      .get(
-        "/doc",
-        openAPIRouteHandler(app, {
-          documentation: {
-            info: {
-              title: "opencode",
-              version: "0.0.3",
-              description: "opencode api",
-            },
-            openapi: "3.1.1",
-          },
-        }),
-      )
-      .use(
-        validator(
-          "query",
-          z.object({
-            directory: z.string().optional(),
-            workspace: z.string().optional(),
-          }),
-        ),
-      )
-      .post(
-        "/log",
-        describeRoute({
-          summary: "Write log",
-          description: "Write a log entry to the server logs with specified level and metadata.",
-          operationId: "app.log",
-          responses: {
-            200: {
-              description: "Log entry written successfully",
-              content: {
-                "application/json": {
-                  schema: resolver(z.boolean()),
-                },
-              },
-            },
-            ...errors(400),
-          },
-        }),
-        validator(
-          "json",
-          z.object({
-            service: z.string().meta({ description: "Service name for the log entry" }),
-            level: z.enum(["debug", "info", "error", "warn"]).meta({ description: "Log level" }),
-            message: z.string().meta({ description: "Log message" }),
-            extra: z
-              .record(z.string(), z.any())
-              .optional()
-              .meta({ description: "Additional metadata for the log entry" }),
-          }),
-        ),
-        async (c) => {
-          const { service, level, message, extra } = c.req.valid("json")
-          const logger = Log.create({ service })
+  const buildLayer = (port: number) =>
+    HttpRouter.serve(ExperimentalHttpApiServer.createRoutes(opts), {
+      middleware: disposeMiddleware,
+      disableLogger: true,
+      disableListenLog: true,
+    }).pipe(
+      Layer.provideMerge(WebSocketTracker.layer),
+      Layer.provideMerge(HttpApiServer.layer({ port, hostname: opts.hostname })),
+      // Install a fresh `ConfigProvider` per listener so `Config.string(...)`
+      // reads reflect the current `process.env`. Effect's default
+      // `ConfigProvider` snapshots `process.env` on first read and caches the
+      // result on a module-singleton Reference; without overriding it here,
+      // every later `Server.listen()` keeps observing that initial snapshot.
+      Layer.provide(ConfigProvider.layer(ConfigProvider.fromEnv())),
+    )
 
-          switch (level) {
-            case "debug":
-              logger.debug(message, extra)
-              break
-            case "info":
-              logger.info(message, extra)
-              break
-            case "error":
-              logger.error(message, extra)
-              break
-            case "warn":
-              logger.warn(message, extra)
-              break
-          }
-
-          return c.json(true)
-        },
-      )
-      .use(WorkspaceRouterMiddleware)
-  }
-
-  export function createApp(opts: { cors?: string[] }) {
-    return ControlPlaneRoutes(opts)
-  }
-
-  export async function openapi() {
-    // Build a fresh app with all routes registered directly so
-    // hono-openapi can see describeRoute metadata (`.route()` wraps
-    // handlers when the sub-app has a custom errorHandler, which
-    // strips the metadata symbol).
-    const app = ControlPlaneRoutes()
-    InstanceRoutes(app)
-    const result = await generateSpecs(app, {
-      documentation: {
-        info: {
-          title: "opencode",
-          version: "1.0.0",
-          description: "opencode api",
-        },
-        openapi: "3.1.1",
-      },
-    })
-    return result
-  }
-
-  /** @deprecated do not use this dumb shit */
-  export let url: URL
-
-  export function listen(opts: {
-    port: number
-    hostname: string
-    mdns?: boolean
-    mdnsDomain?: string
-    cors?: string[]
-  }) {
-    url = new URL(`http://${opts.hostname}:${opts.port}`)
-    const app = ControlPlaneRoutes({ cors: opts.cors })
-    const args = {
-      hostname: opts.hostname,
-      idleTimeout: 0,
-      fetch: app.fetch,
-      websocket: websocket,
-    } as const
-    const tryServe = (port: number) => {
-      try {
-        return Bun.serve({ ...args, port })
-      } catch {
-        return undefined
-      }
+  const start = async (port: number) => {
+    const scope = Scope.makeUnsafe()
+    try {
+      const layer = buildLayer(port) as Layer.Layer<
+        HttpServer.HttpServer | WebSocketTracker.Service | HttpApiServer.Service,
+        unknown,
+        never
+      >
+      const ctx = await Effect.runPromise(Layer.buildWithMemoMap(layer, Layer.makeMemoMapUnsafe(), scope))
+      return { scope, ctx }
+    } catch (err) {
+      await Effect.runPromise(Scope.close(scope, Exit.void)).catch(() => undefined)
+      throw err
     }
-    const server = opts.port === 0 ? (tryServe(4096) ?? tryServe(0)) : tryServe(opts.port)
-    if (!server) throw new Error(`Failed to start server on port ${opts.port}`)
+  }
 
-    const shouldPublishMDNS =
-      opts.mdns &&
-      server.port &&
-      opts.hostname !== "127.0.0.1" &&
-      opts.hostname !== "localhost" &&
-      opts.hostname !== "::1"
-    if (shouldPublishMDNS) {
-      MDNS.publish(server.port!, opts.mdnsDomain)
-    } else if (opts.mdns) {
-      log.warn("mDNS enabled but hostname is loopback; skipping mDNS publish")
-    }
+  // Match the legacy adapter port-resolution behavior: explicit `0` prefers
+  // 4096 first, then any free port.
+  let resolved: Awaited<ReturnType<typeof start>> | undefined
+  if (opts.port === 0) {
+    resolved = await start(4096).catch(() => undefined)
+    if (!resolved) resolved = await start(0)
+  } else {
+    resolved = await start(opts.port)
+  }
+  if (!resolved) throw new Error(`Failed to start server on port ${opts.port}`)
 
-    const originalStop = server.stop.bind(server)
-    server.stop = async (closeActiveConnections?: boolean) => {
-      if (shouldPublishMDNS) MDNS.unpublish()
-      return originalStop(closeActiveConnections)
-    }
+  const server = Context.get(resolved.ctx, HttpServer.HttpServer)
+  if (server.address._tag !== "TcpAddress") {
+    await Effect.runPromise(Scope.close(resolved.scope, Exit.void))
+    throw new Error(`Unexpected HttpServer address tag: ${server.address._tag}`)
+  }
+  const port = server.address.port
 
-    return server
+  const innerUrl = new URL("http://localhost")
+  innerUrl.hostname = opts.hostname
+  innerUrl.port = String(port)
+  url = innerUrl
+
+  const mdns =
+    opts.mdns && port && opts.hostname !== "127.0.0.1" && opts.hostname !== "localhost" && opts.hostname !== "::1"
+  if (mdns) {
+    MDNS.publish(port, opts.mdnsDomain)
+  } else if (opts.mdns) {
+    log.warn("mDNS enabled but hostname is loopback; skipping mDNS publish")
+  }
+
+  let forceStopPromise: Promise<void> | undefined
+  let stopPromise: Promise<void> | undefined
+  let mdnsUnpublished = false
+  const unpublish = () => {
+    if (!mdns || mdnsUnpublished) return
+    mdnsUnpublished = true
+    MDNS.unpublish()
+  }
+  const forceStop = () => {
+    forceStopPromise ??= Effect.runPromiseExit(
+      Effect.gen(function* () {
+        yield* Context.get(resolved!.ctx, HttpApiServer.Service).closeAll
+        yield* Context.get(resolved!.ctx, WebSocketTracker.Service).closeAll
+      }),
+    ).then(() => undefined)
+    return forceStopPromise
+  }
+
+  return {
+    hostname: opts.hostname,
+    port,
+    url: innerUrl,
+    stop: (close?: boolean) => {
+      unpublish()
+      const requested = close ? forceStop() : Promise.resolve()
+      stopPromise ??= requested
+        .then(() => Effect.runPromiseExit(Scope.close(resolved!.scope, Exit.void)))
+        .then(() => undefined)
+      return requested.then(() => stopPromise!)
+    },
   }
 }
+
+export * as Server from "./server"
