@@ -1,23 +1,23 @@
-import type { ParsedKey } from "@opentui/core"
-import type { TuiDialogSelectOption, TuiPluginApi, TuiRouteDefinition } from "@opencode-ai/plugin/tui"
-import type { useCommandDialog } from "@tui/component/dialog-command"
-import type { useKeybind } from "@tui/context/keybind"
+import type { TuiDialogSelectOption, TuiPluginApi, TuiRouteDefinition, TuiSlotProps } from "@opencode-ai/plugin/tui"
+import type { useEvent } from "@tui/context/event"
 import type { useRoute } from "@tui/context/route"
 import type { useSDK } from "@tui/context/sdk"
 import type { useSync } from "@tui/context/sync"
 import type { useTheme } from "@tui/context/theme"
 import { Dialog as DialogUI, type useDialog } from "@tui/ui/dialog"
-import type { TuiConfig } from "@/config/tui"
-import { createPluginKeybind } from "../context/plugin-keybinds"
+import type { TuiConfig } from "@/cli/cmd/tui/config/tui"
+import type { useOpencodeKeymap } from "../keymap"
 import type { useKV } from "../context/kv"
 import { DialogAlert } from "../ui/dialog-alert"
 import { DialogConfirm } from "../ui/dialog-confirm"
 import { DialogPrompt } from "../ui/dialog-prompt"
 import { DialogSelect, type DialogSelectOption as SelectOption } from "../ui/dialog-select"
 import { Prompt } from "../component/prompt"
+import { Slot as HostSlot } from "./slots"
 import type { useToast } from "../ui/toast"
-import { Installation } from "@/installation"
-import { createOpencodeClient, type OpencodeClient } from "@opencode-ai/sdk/v2"
+import { InstallationVersion } from "@opencode-ai/core/installation/version"
+import * as Keymap from "../keymap"
+import { createCommandShim } from "./command-shim"
 
 type RouteEntry = {
   key: symbol
@@ -27,24 +27,20 @@ type RouteEntry = {
 export type RouteMap = Map<string, RouteEntry[]>
 
 type Input = {
-  command: ReturnType<typeof useCommandDialog>
-  tuiConfig: TuiConfig.Info
+  tuiConfig: TuiConfig.Resolved
   dialog: ReturnType<typeof useDialog>
-  keybind: ReturnType<typeof useKeybind>
+  keymap: ReturnType<typeof useOpencodeKeymap>
   kv: ReturnType<typeof useKV>
   route: ReturnType<typeof useRoute>
   routes: RouteMap
   bump: () => void
+  event: ReturnType<typeof useEvent>
   sdk: ReturnType<typeof useSDK>
   sync: ReturnType<typeof useSync>
   theme: ReturnType<typeof useTheme>
   toast: ReturnType<typeof useToast>
   renderer: TuiPluginApi["renderer"]
-}
-
-type TuiHostPluginApi = TuiPluginApi & {
-  map: Map<string | undefined, OpencodeClient>
-  dispose: () => void
+  attention: TuiPluginApi["attention"]
 }
 
 function routeRegister(routes: RouteMap, list: TuiRouteDefinition[], bump: () => void) {
@@ -94,7 +90,7 @@ function routeCurrent(route: ReturnType<typeof useRoute>): TuiPluginApi["route"]
       name: "session",
       params: {
         sessionID: route.data.sessionID,
-        initialPrompt: route.data.initialPrompt,
+        prompt: route.data.prompt,
       },
     }
   }
@@ -140,7 +136,7 @@ function stateApi(sync: ReturnType<typeof useSync>): TuiPluginApi["state"] {
       return sync.data.provider
     },
     get path() {
-      return sync.data.path
+      return sync.path
     },
     get vcs() {
       if (!sync.data.vcs) return
@@ -148,20 +144,17 @@ function stateApi(sync: ReturnType<typeof useSync>): TuiPluginApi["state"] {
         branch: sync.data.vcs.branch,
       }
     },
-    workspace: {
-      list() {
-        return sync.data.workspaceList
-      },
-      get(workspaceID) {
-        return sync.workspace.get(workspaceID)
-      },
-    },
     session: {
       count() {
         return sync.data.session.length
       },
+      get(sessionID) {
+        return sync.session.get(sessionID)
+      },
       diff(sessionID) {
-        return sync.data.session_diff[sessionID] ?? []
+        return (sync.data.session_diff[sessionID] ?? []).flatMap((item) =>
+          item.file === undefined ? [] : [{ ...item, file: item.file }],
+        )
       },
       todo(sessionID) {
         return sync.data.todo[sessionID] ?? []
@@ -200,51 +193,32 @@ function stateApi(sync: ReturnType<typeof useSync>): TuiPluginApi["state"] {
 function appApi(): TuiPluginApi["app"] {
   return {
     get version() {
-      return Installation.VERSION
+      return InstallationVersion
     },
   }
 }
 
-export function createTuiApi(input: Input): TuiHostPluginApi {
-  const map = new Map<string | undefined, OpencodeClient>()
-  const scoped: TuiPluginApi["scopedClient"] = (workspaceID) => {
-    const hit = map.get(workspaceID)
-    if (hit) return hit
-
-    const next = createOpencodeClient({
-      baseUrl: input.sdk.url,
-      fetch: input.sdk.fetch,
-      directory: input.sync.data.path.directory || input.sdk.directory,
-      experimental_workspaceID: workspaceID,
-    })
-    map.set(workspaceID, next)
-    return next
-  }
-  const workspace: TuiPluginApi["workspace"] = {
-    current() {
-      return input.sdk.workspaceID
-    },
-    set(workspaceID) {
-      input.sdk.setWorkspace(workspaceID)
-    },
-  }
+export function createTuiApi(input: Input): TuiPluginApi {
   const lifecycle: TuiPluginApi["lifecycle"] = {
     signal: new AbortController().signal,
     onDispose() {
       return () => {}
     },
   }
-
   return {
     app: appApi(),
-    command: {
-      register(cb) {
-        return input.command.register(() => cb())
+    attention: input.attention,
+    // Keep deprecated `api.command` working for v1 plugins; remove in v2.
+    command: createCommandShim(input.keymap, input.dialog, input.tuiConfig.keybinds),
+    keys: {
+      formatSequence(parts) {
+        return Keymap.formatKeySequence(parts, input.tuiConfig)
       },
-      trigger(value) {
-        input.command.trigger(value)
+      formatBindings(bindings) {
+        return Keymap.formatKeyBindings(bindings, input.tuiConfig)
       },
     },
+    keymap: input.keymap,
     route: {
       register(list) {
         return routeRegister(input.routes, list, input.bump)
@@ -288,14 +262,20 @@ export function createTuiApi(input: Input): TuiHostPluginApi {
           />
         )
       },
+      Slot<Name extends string>(props: TuiSlotProps<Name>) {
+        return <HostSlot {...props} />
+      },
       Prompt(props) {
         return (
           <Prompt
+            sessionID={props.sessionID}
             workspaceID={props.workspaceID}
             visible={props.visible}
             disabled={props.disabled}
             onSubmit={props.onSubmit}
+            ref={props.ref}
             hint={props.hint}
+            right={props.right}
             showPlaceholder={props.showPlaceholder}
             placeholders={props.placeholders}
           />
@@ -330,17 +310,6 @@ export function createTuiApi(input: Input): TuiHostPluginApi {
         },
       },
     },
-    keybind: {
-      match(key, evt: ParsedKey) {
-        return input.keybind.match(key, evt)
-      },
-      print(key) {
-        return input.keybind.print(key)
-      },
-      create(defaults, overrides) {
-        return createPluginKeybind(input.keybind, defaults, overrides)
-      },
-    },
     get tuiConfig() {
       return input.tuiConfig
     },
@@ -359,9 +328,7 @@ export function createTuiApi(input: Input): TuiHostPluginApi {
     get client() {
       return input.sdk.client
     },
-    scopedClient: scoped,
-    workspace,
-    event: input.sdk.event,
+    event: input.event,
     renderer: input.renderer,
     slots: {
       register() {
@@ -411,10 +378,6 @@ export function createTuiApi(input: Input): TuiHostPluginApi {
       get ready() {
         return input.theme.ready
       },
-    },
-    map,
-    dispose() {
-      map.clear()
     },
   }
 }
