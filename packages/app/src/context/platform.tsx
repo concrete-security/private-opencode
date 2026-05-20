@@ -1,6 +1,7 @@
 import { createSimpleContext } from "@opencode-ai/ui/context"
 import type { AsyncStorage, SyncStorage } from "@solid-primitives/storage"
 import type { Accessor } from "solid-js"
+import type { DesktopMenuAction } from "../desktop-menu"
 import { ServerConnection } from "./server"
 
 type PickerPaths = string | string[] | null
@@ -49,11 +50,11 @@ export type Platform = {
   /** Storage mechanism, defaults to localStorage */
   storage?: (name?: string) => SyncStorage | AsyncStorage
 
-  /** Check for updates (Tauri only) */
+  /** Check for a downloadable desktop update */
   checkUpdate?(): Promise<UpdateInfo>
 
-  /** Install updates (Tauri only) */
-  update?(): Promise<void>
+  /** Install the downloaded update using the platform restart flow */
+  updateAndRestart?(): Promise<void>
 
   /** Fetch override */
   fetch?: typeof fetch
@@ -81,6 +82,9 @@ export type Platform = {
 
   /** Webview zoom level (desktop only) */
   webviewZoom?: Accessor<number>
+
+  /** Run a desktop-only menu action from the app chrome */
+  runDesktopMenuAction?(action: DesktopMenuAction): Promise<void> | void
 
   /** Check if an editor app exists (desktop only) */
   checkAppExists?(appName: string): Promise<boolean>
