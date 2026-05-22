@@ -6,14 +6,19 @@ on:
 
 jobs:
   check-duplicates:
+<<<<<<< HEAD
     if: github.event.action == 'opened'
     runs-on: ubuntu-24.04
+=======
+    if: github.event.action == 'opened' && !contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.issue.author_association)
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+>>>>>>> upstream/dev
     permissions:
       contents: read
       issues: write
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           fetch-depth: 1
 
@@ -118,14 +123,19 @@ jobs:
           Remember: post at most ONE comment combining all findings. If everything is fine, post nothing."
 
   recheck-compliance:
+<<<<<<< HEAD
     if: github.event.action == 'edited' && contains(github.event.issue.labels.*.name, 'needs:compliance')
     runs-on: ubuntu-24.04
+=======
+    if: github.event.action == 'edited' && contains(github.event.issue.labels.*.name, 'needs:compliance') && !contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.issue.author_association)
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+>>>>>>> upstream/dev
     permissions:
       contents: read
       issues: write
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           fetch-depth: 1
 

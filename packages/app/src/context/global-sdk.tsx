@@ -1,16 +1,15 @@
 import type { Event } from "@opencode-ai/sdk/v2/client"
 import { createSimpleContext } from "@opencode-ai/ui/context"
 import { createGlobalEmitter } from "@solid-primitives/event-bus"
-import { batch, onCleanup } from "solid-js"
-import z from "zod"
+import { makeEventListener } from "@solid-primitives/event-listener"
+import { batch, onCleanup, onMount } from "solid-js"
 import { createSdkForServer } from "@/utils/server"
 import { useLanguage } from "./language"
 import { usePlatform } from "./platform"
 import { useServer } from "./server"
 
-const abortError = z.object({
-  name: z.literal("AbortError"),
-})
+const isAbortError = (error: unknown) =>
+  error !== null && typeof error === "object" && "name" in error && error.name === "AbortError"
 
 export const { use: useGlobalSDK, provider: GlobalSDKProvider } = createSimpleContext({
   name: "GlobalSDK",
@@ -102,7 +101,7 @@ export const { use: useGlobalSDK, provider: GlobalSDKProvider } = createSimpleCo
 
     let streamErrorLogged = false
     const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
-    const aborted = (error: unknown) => abortError.safeParse(error).success
+    const aborted = isAbortError
 
     let attempt: AbortController | undefined
     let run: Promise<void> | undefined
@@ -127,6 +126,7 @@ export const { use: useGlobalSDK, provider: GlobalSDKProvider } = createSimpleCo
       if (started) return run
       started = true
       run = (async () => {
+        // oxlint-disable-next-line no-unmodified-loop-condition -- `started` is set to false by stop() which also aborts; both flags are checked to allow graceful exit
         while (!abort.signal.aborted && started) {
           attempt = new AbortController()
           lastEventAt = Date.now()
@@ -154,7 +154,12 @@ export const { use: useGlobalSDK, provider: GlobalSDKProvider } = createSimpleCo
               resetHeartbeat()
               streamErrorLogged = false
               const directory = event.directory ?? "global"
-              const payload = event.payload
+              if (event.payload.type === "sync") {
+                continue
+              }
+
+              const payload = event.payload as Event
+
               const k = key(directory, payload)
               if (k) {
                 const i = coalesced.get(k)
@@ -206,21 +211,16 @@ export const { use: useGlobalSDK, provider: GlobalSDKProvider } = createSimpleCo
       clearHeartbeat()
     }
 
-    const onVisibility = () => {
-      if (typeof document === "undefined") return
-      if (document.visibilityState !== "visible") return
-      if (!started) return
-      if (Date.now() - lastEventAt < HEARTBEAT_TIMEOUT_MS) return
-      attempt?.abort()
-    }
-    if (typeof document !== "undefined") {
-      document.addEventListener("visibilitychange", onVisibility)
-    }
+    onMount(() => {
+      makeEventListener(document, "visibilitychange", () => {
+        if (document.visibilityState !== "visible") return
+        if (!started) return
+        if (Date.now() - lastEventAt < HEARTBEAT_TIMEOUT_MS) return
+        attempt?.abort()
+      })
+    })
 
     onCleanup(() => {
-      if (typeof document !== "undefined") {
-        document.removeEventListener("visibilitychange", onVisibility)
-      }
       stop()
       abort.abort()
       flush()
@@ -231,6 +231,9 @@ export const { use: useGlobalSDK, provider: GlobalSDKProvider } = createSimpleCo
       fetch: platform.fetch,
       throwOnError: true,
     })
+
+    const dirSyncContexts = new Map<string, ReturnType<typeof createDirSdkContext>>()
+    const dirSdkContextRefCounts = new Map<string, number>()
 
     return {
       url: currentServer.http.url,
@@ -249,6 +252,58 @@ export const { use: useGlobalSDK, provider: GlobalSDKProvider } = createSimpleCo
           ...opts,
         })
       },
+      createDirSyncContext: (directory: string) => {
+        onCleanup(() => {
+          dirSdkContextRefCounts.set(directory, (dirSdkContextRefCounts.get(directory) ?? 0) - 1)
+          if (dirSdkContextRefCounts.get(directory) === 0) {
+            dirSyncContexts.delete(directory)
+            dirSdkContextRefCounts.delete(directory)
+          }
+        })
+
+        const cached = dirSyncContexts.get(directory)
+        if (cached) {
+          dirSdkContextRefCounts.set(directory, (dirSdkContextRefCounts.get(directory) ?? 0) + 1)
+          return cached
+        }
+        const ctx = createDirSdkContext(directory)
+        dirSyncContexts.set(directory, ctx)
+        dirSdkContextRefCounts.set(directory, 1)
+
+        return ctx
+      },
     }
   },
 })
+
+type SDKEventMap = {
+  [key in Event["type"]]: Extract<Event, { type: key }>
+}
+
+function createDirSdkContext(directory: string) {
+  const globalSDK = useGlobalSDK()
+
+  const client = globalSDK.createClient({
+    directory,
+    throwOnError: true,
+  })
+
+  const emitter = createGlobalEmitter<SDKEventMap>()
+
+  const unsub = globalSDK.event.on(directory, (event) => {
+    emitter.emit(event.type, event)
+  })
+  onCleanup(unsub)
+
+  return {
+    directory,
+    client,
+    event: emitter,
+    get url() {
+      return globalSDK.url
+    },
+    createClient(opts: Parameters<typeof globalSDK.createClient>[0]) {
+      return globalSDK.createClient(opts)
+    },
+  }
+}
