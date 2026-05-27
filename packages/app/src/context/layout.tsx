@@ -1,8 +1,9 @@
 import { createStore, produce } from "solid-js/store"
 import { batch, createEffect, createMemo, onCleanup, onMount, type Accessor } from "solid-js"
 import { createSimpleContext } from "@opencode-ai/ui/context"
-import { useGlobalSync } from "./global-sync"
-import { useGlobalSDK } from "./global-sdk"
+import { makeEventListener } from "@solid-primitives/event-listener"
+import { useServerSync } from "./server-sync"
+import { useServerSDK } from "./server-sdk"
 import { useServer } from "./server"
 import { usePlatform } from "./platform"
 import { Project } from "@opencode-ai/sdk/v2"
@@ -42,6 +43,7 @@ type SessionView = {
   reviewOpen?: string[]
   pendingMessage?: string
   pendingMessageAt?: number
+  todoCollapsed?: boolean
 }
 
 type TabHandoff = {
@@ -134,8 +136,8 @@ const normalizeStoredSessionTabs = (key: string, tabs: SessionTabs) => {
 export const { use: useLayout, provider: LayoutProvider } = createSimpleContext({
   name: "Layout",
   init: () => {
-    const globalSdk = useGlobalSDK()
-    const globalSync = useGlobalSync()
+    const globalSdk = useServerSDK()
+    const serverSync = useServerSync()
     const server = useServer()
     const platform = usePlatform()
 
@@ -343,7 +345,7 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
           return
         }
 
-        setStore("sessionView", sessionKey, "scroll", (prev) => ({ ...(prev ?? {}), ...next }))
+        setStore("sessionView", sessionKey, "scroll", (prev) => ({ ...prev, ...next }))
         prune(keep)
       },
     })
@@ -366,12 +368,10 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
         flush()
       }
 
-      window.addEventListener("pagehide", flush)
-      document.addEventListener("visibilitychange", handleVisibility)
+      makeEventListener(window, "pagehide", flush)
+      makeEventListener(document, "visibilitychange", handleVisibility)
 
       onCleanup(() => {
-        window.removeEventListener("pagehide", flush)
-        document.removeEventListener("visibilitychange", handleVisibility)
         scroll.dispose()
       })
     })
@@ -386,48 +386,25 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
     }
 
     function enrich(project: { worktree: string; expanded: boolean }) {
-      const [childStore] = globalSync.child(project.worktree, { bootstrap: false })
+      const [childStore] = serverSync.child(project.worktree, { bootstrap: false })
       const projectID = childStore.project
       const metadata = projectID
-        ? globalSync.data.project.find((x) => x.id === projectID)
-        : globalSync.data.project.find((x) => x.worktree === project.worktree)
+        ? serverSync.data.project.find((x) => x.id === projectID)
+        : serverSync.data.project.find((x) => x.worktree === project.worktree)
 
-      const local = childStore.projectMeta
-      const localOverride =
-        local?.name !== undefined ||
-        local?.commands?.start !== undefined ||
-        local?.icon?.override !== undefined ||
-        local?.icon?.color !== undefined
-
-      const base = {
-        ...(metadata ?? {}),
-        ...project,
-        icon: {
-          url: metadata?.icon?.url,
-          override: metadata?.icon?.override ?? childStore.icon,
-          color: metadata?.icon?.color,
-        },
+      // Preserve local icon override from per-workspace localStorage cache (childStore.icon).
+      // Without this, different subdirectories of the same git repo would share the same
+      // icon from the database instead of using their individual overrides.
+      const base = { ...metadata, ...project }
+      if (childStore.icon) {
+        return { ...base, icon: { ...base.icon, override: childStore.icon } }
       }
-
-      const isGlobal = projectID === "global" || (metadata?.id === undefined && localOverride)
-      if (!isGlobal) return base
-
-      return {
-        ...base,
-        id: base.id ?? "global",
-        name: local?.name,
-        commands: local?.commands,
-        icon: {
-          url: base.icon?.url,
-          override: local?.icon?.override,
-          color: local?.icon?.color,
-        },
-      }
+      return base
     }
 
     const roots = createMemo(() => {
       const map = new Map<string, string>()
-      for (const project of globalSync.data.project) {
+      for (const project of serverSync.data.project) {
         const sandboxes = project.sandboxes ?? []
         for (const sandbox of sandboxes) {
           map.set(sandbox, project.worktree)
@@ -493,12 +470,12 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
     createEffect(() => {
       const projects = enriched()
       if (projects.length === 0) return
-      if (!globalSync.ready) return
+      if (!serverSync.ready) return
 
       for (const project of projects) {
         if (!project.id) continue
         if (project.id === "global") continue
-        globalSync.project.icon(project.worktree, project.icon?.override)
+        serverSync.project.icon(project.worktree, project.icon?.override)
       }
     })
 
@@ -517,7 +494,7 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
       }
 
       for (const project of projects) {
-        if (project.icon?.color) continue
+        if (project.icon?.color || project.icon?.override || project.icon?.url) continue
         const worktree = project.worktree
         const existing = colors[worktree]
         const color = existing ?? pickAvailableColor(used)
@@ -532,7 +509,7 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
         colorRequested.set(worktree, color)
 
         if (project.id === "global") {
-          globalSync.project.meta(worktree, { icon: { color } })
+          serverSync.project.meta(worktree, { icon: { color } })
           continue
         }
 
@@ -554,7 +531,7 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
           sessionTimer = undefined
           void Promise.all(
             server.projects.list().map((project) => {
-              return globalSync.project.loadSessions(project.worktree)
+              return serverSync.project.loadSessions(project.worktree)
             }),
           )
         }, 0)
@@ -583,7 +560,7 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
         open(directory: string) {
           const root = rootFor(directory)
           if (server.projects.list().find((x) => x.worktree === root)) return
-          globalSync.project.loadSessions(root)
+          void serverSync.project.loadSessions(root)
           server.projects.open(root)
         },
         close(directory: string) {
@@ -782,6 +759,18 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
           },
           setScroll(tab: string, pos: SessionScroll) {
             scroll.setScroll(key(), tab, pos)
+          },
+          todoCollapsed: {
+            get: () => s().todoCollapsed ?? false,
+            set(collapsed: boolean) {
+              const session = key()
+              const current = store.sessionView[session]
+              if (!current) {
+                setStore("sessionView", session, { scroll: {}, todoCollapsed: collapsed })
+              } else {
+                setStore("sessionView", session, "todoCollapsed", collapsed)
+              }
+            },
           },
           terminal: {
             opened: terminalOpened,
