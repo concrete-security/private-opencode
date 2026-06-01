@@ -1,4 +1,5 @@
 import "@/index.css"
+import * as Sentry from "@sentry/solid"
 import { I18nProvider } from "@opencode-ai/ui/context"
 import { DialogProvider } from "@opencode-ai/ui/context/dialog"
 import { FileComponentProvider } from "@opencode-ai/ui/context/file"
@@ -10,9 +11,10 @@ import { ThemeProvider } from "@opencode-ai/ui/theme/context"
 import { MetaProvider } from "@solidjs/meta"
 import { type BaseRouterProps, Navigate, Route, Router } from "@solidjs/router"
 import { QueryClient, QueryClientProvider } from "@tanstack/solid-query"
-import { type Duration, Effect } from "effect"
+import { Effect } from "effect"
 import {
   type Component,
+  createEffect,
   createMemo,
   createResource,
   createSignal,
@@ -29,8 +31,8 @@ import { Dynamic } from "solid-js/web"
 import { CommandProvider } from "@/context/command"
 import { CommentsProvider } from "@/context/comments"
 import { FileProvider } from "@/context/file"
-import { GlobalSDKProvider } from "@/context/global-sdk"
-import { GlobalSyncProvider } from "@/context/global-sync"
+import { ServerSDKProvider } from "@/context/server-sdk"
+import { ServerSyncProvider } from "@/context/server-sync"
 import { HighlightsProvider } from "@/context/highlights"
 import { LanguageProvider, type Locale, useLanguage } from "@/context/language"
 import { LayoutProvider } from "@/context/layout"
@@ -39,29 +41,25 @@ import { NotificationProvider } from "@/context/notification"
 import { PermissionProvider } from "@/context/permission"
 import { PromptProvider } from "@/context/prompt"
 import { ServerConnection, ServerProvider, serverName, useServer } from "@/context/server"
-import { SettingsProvider } from "@/context/settings"
+import { SettingsProvider, useSettings } from "@/context/settings"
 import { TerminalProvider } from "@/context/terminal"
 import DirectoryLayout from "@/pages/directory-layout"
 import Layout from "@/pages/layout"
 import { ErrorPage } from "./pages/error"
 import { useCheckServerHealth } from "./utils/server-health"
+import { ServersProvider } from "./context/servers"
 
 const HomeRoute = lazy(() => import("@/pages/home"))
-const loadSession = () => import("@/pages/session")
-const Session = lazy(loadSession)
-const Loading = () => <div class="size-full" />
+const Session = lazy(() => import("@/pages/session"))
 
-if (typeof location === "object" && /\/session(?:\/|$)/.test(location.pathname)) {
-  void loadSession()
-}
-
-const SessionRoute = () => (
-  <SessionProviders>
-    <Session />
-  </SessionProviders>
+const SessionRoute = Object.assign(
+  () => (
+    <SessionProviders>
+      <Session />
+    </SessionProviders>
+  ),
+  { preload: Session.preload },
 )
-
-const SessionIndexRoute = () => <Navigate href="session" />
 
 function UiI18nBridge(props: ParentProps) {
   const language = useLanguage()
@@ -77,18 +75,44 @@ declare global {
     }
     api?: {
       setTitlebar?: (theme: { mode: "light" | "dark" }) => Promise<void>
+      exportDebugLogs?: () => Promise<string>
     }
   }
 }
 
 function QueryProvider(props: ParentProps) {
-  const client = new QueryClient()
+  const client = new QueryClient({
+    defaultOptions: {
+      queries: {
+        refetchOnReconnect: false,
+        refetchOnMount: false,
+        refetchOnWindowFocus: false,
+      },
+    },
+  })
   return <QueryClientProvider client={client}>{props.children}</QueryClientProvider>
+}
+
+function BodyDesignClass() {
+  const settings = useSettings()
+
+  createEffect(() => {
+    if (typeof document === "undefined") return
+
+    const enabled = settings.general.newLayoutDesigns()
+    document.body.classList.toggle("text-12-regular", !enabled)
+    document.body.classList.toggle("font-(family-name:--font-family-text)", enabled)
+    document.body.classList.toggle("text-[13px]", enabled)
+    document.body.classList.toggle("font-[440]", enabled)
+  })
+
+  return null
 }
 
 function AppShellProviders(props: ParentProps) {
   return (
     <SettingsProvider>
+      <BodyDesignClass />
       <PermissionProvider>
         <LayoutProvider>
           <NotificationProvider>
@@ -121,10 +145,10 @@ function SessionProviders(props: ParentProps) {
 function RouterRoot(props: ParentProps<{ appChildren?: JSX.Element }>) {
   return (
     <AppShellProviders>
-      <Suspense fallback={<Loading />}>
-        {props.appChildren}
-        {props.children}
-      </Suspense>
+      {/*<Suspense fallback={<Loading />}>*/}
+      {props.appChildren}
+      {props.children}
+      {/*</Suspense>*/}
     </AppShellProviders>
   )
 }
@@ -140,7 +164,12 @@ export function AppBaseProviders(props: ParentProps<{ locale?: Locale }>) {
       >
         <LanguageProvider locale={props.locale}>
           <UiI18nBridge>
-            <ErrorBoundary fallback={(error) => <ErrorPage error={error} />}>
+            <ErrorBoundary
+              fallback={(error) => {
+                Sentry.captureException(error)
+                return <ErrorPage error={error} />
+              }}
+            >
               <QueryProvider>
                 <DialogProvider>
                   <MarkedProvider>
@@ -155,11 +184,6 @@ export function AppBaseProviders(props: ParentProps<{ locale?: Locale }>) {
     </MetaProvider>
   )
 }
-
-const effectMinDuration =
-  (duration: Duration.Input) =>
-  <A, E, R>(e: Effect.Effect<A, E, R>) =>
-    Effect.all([e, Effect.sleep(duration)], { concurrency: "unbounded" }).pipe(Effect.map((v) => v[0]))
 
 function ConnectionGate(props: ParentProps<{ disableHealthCheck?: boolean }>) {
   const server = useServer()
@@ -182,7 +206,6 @@ function ConnectionGate(props: ParentProps<{ disableHealthCheck?: boolean }>) {
             if (checkMode() === "background" || type === "http") return false
           }
         }).pipe(
-          effectMinDuration(checkMode() === "blocking" ? "1.2 seconds" : 0),
           Effect.timeoutOrElse({ duration: "10 seconds", orElse: () => Effect.succeed(false) }),
           Effect.ensuring(Effect.sync(() => setCheckMode("background"))),
           Effect.runPromise,
@@ -190,32 +213,41 @@ function ConnectionGate(props: ParentProps<{ disableHealthCheck?: boolean }>) {
   )
 
   return (
-    <Show
-      when={checkMode() === "blocking" ? !startupHealthCheck.loading : startupHealthCheck.state !== "pending"}
+    <Suspense
       fallback={
         <div class="h-dvh w-screen flex flex-col items-center justify-center bg-background-base">
           <Splash class="w-16 h-20 opacity-50 animate-pulse" />
         </div>
       }
     >
+      {/*<Show
+        when={checkMode() === "blocking" ? !startupHealthCheck.loading : startupHealthCheck.state !== "pending"}
+        fallback={
+          <div class="h-dvh w-screen flex flex-col items-center justify-center bg-background-base">
+            <Splash class="w-16 h-20 opacity-50 animate-pulse" />
+          </div>
+        }
+      >*/}
+      {checkMode() === "blocking" ? startupHealthCheck() : startupHealthCheck.latest}
       <Show
         when={startupHealthCheck()}
         fallback={
           <ConnectionError
             onRetry={() => {
-              if (checkMode() === "background") healthCheckActions.refetch()
+              if (checkMode() === "background") void healthCheckActions.refetch()
             }}
             onServerSelected={(key) => {
               setCheckMode("blocking")
               server.setActive(key)
-              healthCheckActions.refetch()
+              void healthCheckActions.refetch()
             }}
           />
         }
       >
         {props.children}
       </Show>
-    </Show>
+      {/*</Show>*/}
+    </Suspense>
   )
 }
 
@@ -283,29 +315,29 @@ export function AppInterface(props: {
   disableHealthCheck?: boolean
 }) {
   return (
-    <ServerProvider
-      defaultServer={props.defaultServer}
-      disableHealthCheck={props.disableHealthCheck}
-      servers={props.servers}
-    >
-      <ConnectionGate disableHealthCheck={props.disableHealthCheck}>
-        <ServerKey>
-          <GlobalSDKProvider>
-            <GlobalSyncProvider>
-              <Dynamic
-                component={props.router ?? Router}
-                root={(routerProps) => <RouterRoot appChildren={props.children}>{routerProps.children}</RouterRoot>}
-              >
-                <Route path="/" component={HomeRoute} />
-                <Route path="/:dir" component={DirectoryLayout}>
-                  <Route path="/" component={SessionIndexRoute} />
-                  <Route path="/session/:id?" component={SessionRoute} />
-                </Route>
-              </Dynamic>
-            </GlobalSyncProvider>
-          </GlobalSDKProvider>
-        </ServerKey>
-      </ConnectionGate>
+    <ServerProvider defaultServer={props.defaultServer} servers={props.servers}>
+      <ServersProvider>
+        <ConnectionGate disableHealthCheck={props.disableHealthCheck}>
+          <ServerKey>
+            <QueryProvider>
+              <ServerSDKProvider>
+                <ServerSyncProvider>
+                  <Dynamic
+                    component={props.router ?? Router}
+                    root={(routerProps) => <RouterRoot appChildren={props.children}>{routerProps.children}</RouterRoot>}
+                  >
+                    <Route path="/" component={HomeRoute} />
+                    <Route path="/:dir" component={DirectoryLayout}>
+                      <Route path="/" component={() => <Navigate href="session" />} />
+                      <Route path="/session/:id?" component={SessionRoute} />
+                    </Route>
+                  </Dynamic>
+                </ServerSyncProvider>
+              </ServerSDKProvider>
+            </QueryProvider>
+          </ServerKey>
+        </ConnectionGate>
+      </ServersProvider>
     </ServerProvider>
   )
 }
