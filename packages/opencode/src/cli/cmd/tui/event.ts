@@ -1,15 +1,17 @@
-import { BusEvent } from "@/bus/bus-event"
-import { Bus } from "@/bus"
 import { SessionID } from "@/session/schema"
-import z from "zod"
+import { PositiveInt } from "@opencode-ai/core/schema"
+import { EventV2 } from "@opencode-ai/core/event"
+import { Effect, Schema } from "effect"
+
+const DEFAULT_TOAST_DURATION = 5000
 
 export const TuiEvent = {
-  PromptAppend: BusEvent.define("tui.prompt.append", z.object({ text: z.string() })),
-  CommandExecute: BusEvent.define(
-    "tui.command.execute",
-    z.object({
-      command: z.union([
-        z.enum([
+  PromptAppend: EventV2.define({ type: "tui.prompt.append", schema: { text: Schema.String } }),
+  CommandExecute: EventV2.define({
+    type: "tui.command.execute",
+    schema: {
+      command: Schema.Union([
+        Schema.Literals([
           "session.list",
           "session.new",
           "session.share",
@@ -27,23 +29,25 @@ export const TuiEvent = {
           "prompt.submit",
           "agent.cycle",
         ]),
-        z.string(),
+        Schema.String,
       ]),
-    }),
-  ),
-  ToastShow: BusEvent.define(
-    "tui.toast.show",
-    z.object({
-      title: z.string().optional(),
-      message: z.string(),
-      variant: z.enum(["info", "success", "warning", "error"]),
-      duration: z.number().default(5000).optional().describe("Duration in milliseconds"),
-    }),
-  ),
-  SessionSelect: BusEvent.define(
-    "tui.session.select",
-    z.object({
-      sessionID: SessionID.zod.describe("Session ID to navigate to"),
-    }),
-  ),
+    },
+  }),
+  ToastShow: EventV2.define({
+    type: "tui.toast.show",
+    schema: {
+      title: Schema.optional(Schema.String),
+      message: Schema.String,
+      variant: Schema.Literals(["info", "success", "warning", "error"]),
+      duration: PositiveInt.pipe(Schema.withDecodingDefault(Effect.succeed(DEFAULT_TOAST_DURATION))).annotate({
+        description: "Duration in milliseconds",
+      }),
+    },
+  }),
+  SessionSelect: EventV2.define({
+    type: "tui.session.select",
+    schema: {
+      sessionID: SessionID.annotate({ description: "Session ID to navigate to" }),
+    },
+  }),
 }
