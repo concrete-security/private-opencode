@@ -1,11 +1,11 @@
 import type { Message, Session } from "@opencode-ai/sdk/v2/client"
-import { showToast } from "@opencode-ai/ui/toast"
-import { base64Encode } from "@opencode-ai/util/encode"
-import { Binary } from "@opencode-ai/util/binary"
+import { showToast } from "@/utils/toast"
+import { base64Encode } from "@opencode-ai/core/util/encode"
+import { Binary } from "@opencode-ai/core/util/binary"
 import { useNavigate, useParams } from "@solidjs/router"
-import type { Accessor } from "solid-js"
+import { batch, type Accessor } from "solid-js"
 import type { FileSelection } from "@/context/file"
-import { useGlobalSync } from "@/context/global-sync"
+import { useServerSync } from "@/context/server-sync"
 import { useLanguage } from "@/context/language"
 import { useLayout } from "@/context/layout"
 import { useLocal } from "@/context/local"
@@ -18,6 +18,7 @@ import { Worktree as WorktreeState } from "@/utils/worktree"
 import { buildRequestParts } from "./build-request-parts"
 import { setCursorPosition } from "./editor-dom"
 import { formatServerError } from "@/utils/server-errors"
+import { ScopedKey } from "@/utils/server-scope"
 
 type PendingPrompt = {
   abort: AbortController
@@ -38,7 +39,7 @@ export type FollowupDraft = {
 
 type FollowupSendInput = {
   client: ReturnType<typeof useSDK>["client"]
-  globalSync: ReturnType<typeof useGlobalSync>
+  serverSync: ReturnType<typeof useServerSync>
   sync: ReturnType<typeof useSync>
   draft: FollowupDraft
   messageID?: string
@@ -53,7 +54,7 @@ const draftImages = (prompt: Prompt) => prompt.filter((part): part is ImageAttac
 export async function sendFollowupDraft(input: FollowupSendInput) {
   const text = draftText(input.draft.prompt)
   const images = draftImages(input.draft.prompt)
-  const [, setStore] = input.globalSync.child(input.draft.sessionDirectory)
+  const [, setStore] = input.serverSync.child(input.draft.sessionDirectory)
 
   const setBusy = () => {
     if (!input.optimisticBusy) return
@@ -120,8 +121,7 @@ export async function sendFollowupDraft(input: FollowupSendInput) {
     role: "user",
     time: { created: Date.now() },
     agent: input.draft.agent,
-    model: input.draft.model,
-    variant: input.draft.variant,
+    model: { ...input.draft.model, variant: input.draft.variant },
   }
 
   const add = () =>
@@ -139,13 +139,17 @@ export async function sendFollowupDraft(input: FollowupSendInput) {
       messageID,
     })
 
-  setBusy()
-  add()
+  batch(() => {
+    setBusy()
+    add()
+  })
 
   try {
     if (!(await wait())) {
-      setIdle()
-      remove()
+      batch(() => {
+        setIdle()
+        remove()
+      })
       return false
     }
 
@@ -159,8 +163,10 @@ export async function sendFollowupDraft(input: FollowupSendInput) {
     })
     return true
   } catch (err) {
-    setIdle()
-    remove()
+    batch(() => {
+      setIdle()
+      remove()
+    })
     throw err
   }
 }
@@ -200,13 +206,14 @@ export function createPromptSubmit(input: PromptSubmitInput) {
   const navigate = useNavigate()
   const sdk = useSDK()
   const sync = useSync()
-  const globalSync = useGlobalSync()
+  const serverSync = useServerSync()
   const local = useLocal()
   const permission = usePermission()
   const prompt = usePrompt()
   const layout = useLayout()
   const language = useLanguage()
   const params = useParams()
+  const pendingKey = (sessionID: string) => ScopedKey.from(sdk.scope, sessionID)
 
   const errorMessage = (err: unknown) => {
     if (err && typeof err === "object" && "data" in err) {
@@ -221,17 +228,18 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     const sessionID = params.id
     if (!sessionID) return Promise.resolve()
 
-    globalSync.todo.set(sessionID, [])
-    const [, setStore] = globalSync.child(sdk.directory)
+    serverSync.todo.set(sessionID, [])
+    const [, setStore] = serverSync.child(sdk.directory)
     setStore("todo", sessionID, [])
 
     input.onAbort?.()
 
-    const queued = pending.get(sessionID)
+    const key = pendingKey(sessionID)
+    const queued = pending.get(key)
     if (queued) {
       queued.abort.abort()
       queued.cleanup()
-      pending.delete(sessionID)
+      pending.delete(key)
       return Promise.resolve()
     }
     return sdk.client.session
@@ -268,7 +276,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
   }
 
   const seed = (dir: string, info: Session) => {
-    const [, setStore] = globalSync.child(dir)
+    const [, setStore] = serverSync.child(dir)
     setStore("session", (list: Session[]) => {
       const result = Binary.search(list, info.id, (item) => item.id)
       const next = [...list]
@@ -290,7 +298,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     const mode = input.mode()
 
     if (text.trim().length === 0 && images.length === 0 && input.commentCount() === 0) {
-      if (input.working()) abort()
+      if (input.working()) void abort()
       return
     }
 
@@ -336,7 +344,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
           })
           return
         }
-        WorktreeState.pending(createdWorktree.directory)
+        WorktreeState.pending(sdk.scope, createdWorktree.directory)
         sessionDirectory = createdWorktree.directory
       }
 
@@ -349,7 +357,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
           directory: sessionDirectory,
           throwOnError: true,
         })
-        globalSync.child(sessionDirectory)
+        serverSync.child(sessionDirectory)
       }
 
       input.onNewSessionWorktreeReset?.()
@@ -495,7 +503,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     clearInput()
 
     const waitForWorktree = async () => {
-      const worktree = WorktreeState.get(sessionDirectory)
+      const worktree = WorktreeState.get(sdk.scope, sessionDirectory)
       if (!worktree || worktree.status !== "pending") return true
 
       if (sessionDirectory === projectDirectory) {
@@ -512,7 +520,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
         restoreInput()
       }
 
-      pending.set(session.id, { abort: controller, cleanup })
+      pending.set(pendingKey(session.id), { abort: controller, cleanup })
 
       const abortWait = new Promise<Awaited<ReturnType<typeof WorktreeState.wait>>>((resolve) => {
         if (controller.signal.aborted) {
@@ -539,11 +547,13 @@ export function createPromptSubmit(input: PromptSubmitInput) {
         }, timeoutMs)
       })
 
-      const result = await Promise.race([WorktreeState.wait(sessionDirectory), abortWait, timeout]).finally(() => {
-        if (timer.id === undefined) return
-        clearTimeout(timer.id)
-      })
-      pending.delete(session.id)
+      const result = await Promise.race([WorktreeState.wait(sdk.scope, sessionDirectory), abortWait, timeout]).finally(
+        () => {
+          if (timer.id === undefined) return
+          clearTimeout(timer.id)
+        },
+      )
+      pending.delete(pendingKey(session.id))
       if (controller.signal.aborted) return false
       if (result.status === "failed") throw new Error(result.message)
       return true
@@ -552,13 +562,13 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     void sendFollowupDraft({
       client,
       sync,
-      globalSync,
+      serverSync,
       draft,
       messageID,
       optimisticBusy: sessionDirectory === projectDirectory,
       before: waitForWorktree,
     }).catch((err) => {
-      pending.delete(session.id)
+      pending.delete(pendingKey(session.id))
       if (sessionDirectory === projectDirectory) {
         sync.set("session_status", session.id, { type: "idle" })
       }
