@@ -1,10 +1,12 @@
 import { createSimpleContext } from "@opencode-ai/ui/context"
-import { checksum } from "@opencode-ai/util/encode"
+import { checksum } from "@opencode-ai/core/util/encode"
 import { useParams } from "@solidjs/router"
 import { batch, createMemo, createRoot, getOwner, onCleanup } from "solid-js"
 import { createStore, type SetStoreFunction } from "solid-js/store"
 import type { FileSelection } from "@/context/file"
 import { Persist, persisted } from "@/utils/persist"
+import { useServerSDK } from "./server-sdk"
+import type { ServerScope } from "@/utils/server-scope"
 
 interface PartBase {
   content: string
@@ -161,11 +163,11 @@ type PromptCacheEntry = {
   dispose: VoidFunction
 }
 
-function createPromptSession(dir: string, id: string | undefined) {
+function createPromptSession(scope: ServerScope, dir: string, id: string | undefined) {
   const legacy = `${dir}/prompt${id ? "/" + id : ""}.v2`
 
   const [store, setStore, _, ready] = persisted(
-    Persist.scoped(dir, id, "prompt", [legacy]),
+    Persist.serverScoped(scope, dir, id, "prompt", [legacy]),
     createStore<{
       prompt: Prompt
       cursor?: number
@@ -185,9 +187,9 @@ function createPromptSession(dir: string, id: string | undefined) {
 
   return {
     ready,
-    current: createMemo(() => store.prompt),
+    current: () => store.prompt,
     cursor: createMemo(() => store.cursor),
-    dirty: createMemo(() => !isPromptEqual(store.prompt, DEFAULT_PROMPT)),
+    dirty: () => !isPromptEqual(store.prompt, DEFAULT_PROMPT),
     context: {
       items: createMemo(() => store.context.items),
       add(item: ContextItem) {
@@ -229,6 +231,7 @@ export const { use: usePrompt, provider: PromptProvider } = createSimpleContext(
   gate: false,
   init: () => {
     const params = useParams()
+    const serverSDK = useServerSDK()
     const cache = new Map<string, PromptCacheEntry>()
 
     const disposeAll = () => {
@@ -262,7 +265,7 @@ export const { use: usePrompt, provider: PromptProvider } = createSimpleContext(
 
       const entry = createRoot(
         (dispose) => ({
-          value: createPromptSession(dir, id),
+          value: createPromptSession(serverSDK.scope, dir, id),
           dispose,
         }),
         owner,
@@ -277,7 +280,7 @@ export const { use: usePrompt, provider: PromptProvider } = createSimpleContext(
     const pick = (scope?: Scope) => (scope ? load(scope.dir, scope.id) : session())
 
     return {
-      ready: () => session().ready(),
+      ready: () => session().ready,
       current: () => session().current(),
       cursor: () => session().cursor(),
       dirty: () => session().dirty(),
