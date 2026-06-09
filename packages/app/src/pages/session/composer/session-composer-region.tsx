@@ -1,9 +1,12 @@
 import { Show, createEffect, createMemo, onCleanup } from "solid-js"
 import { createStore } from "solid-js/store"
+import { useNavigate } from "@solidjs/router"
 import { useSpring } from "@opencode-ai/ui/motion-spring"
+import { useLayout } from "@/context/layout"
 import { PromptInput } from "@/components/prompt-input"
 import { useLanguage } from "@/context/language"
 import { usePrompt } from "@/context/prompt"
+import { useSync } from "@/context/sync"
 import { getSessionHandoff, setSessionHandoff } from "@/pages/session/handoff"
 import { useSessionKey } from "@/pages/session/session-layout"
 import { SessionPermissionDock } from "@/pages/session/composer/session-permission-dock"
@@ -13,11 +16,14 @@ import { SessionRevertDock } from "@/pages/session/composer/session-revert-dock"
 import type { SessionComposerState } from "@/pages/session/composer/session-composer-state"
 import { SessionTodoDock } from "@/pages/session/composer/session-todo-dock"
 import type { FollowupDraft } from "@/components/prompt-input/submit"
+import { createResizeObserver } from "@solid-primitives/resize-observer"
+import { NEW_SESSION_CONTENT_WIDTH } from "@/pages/session/new-session-layout"
 
 export function SessionComposerRegion(props: {
   state: SessionComposerState
   ready: boolean
   centered: boolean
+  placement?: "dock" | "inline"
   inputRef: (el: HTMLDivElement) => void
   newSessionWorktree: string
   onNewSessionWorktreeReset: () => void
@@ -42,11 +48,19 @@ export function SessionComposerRegion(props: {
   }
   setPromptDockRef: (el: HTMLDivElement) => void
 }) {
+  const navigate = useNavigate()
+  const layout = useLayout()
   const prompt = usePrompt()
   const language = useLanguage()
   const route = useSessionKey()
+  const sync = useSync()
+  const view = layout.view(route.sessionKey)
 
   const handoffPrompt = createMemo(() => getSessionHandoff(route.sessionKey())?.prompt)
+  const info = createMemo(() => (route.params.id ? sync.session.get(route.params.id) : undefined))
+  const parentID = createMemo(() => info()?.parentID)
+  const child = createMemo(() => !!parentID())
+  const showComposer = createMemo(() => !props.state.blocked() || child())
 
   const previewPrompt = () =>
     prompt
@@ -112,27 +126,34 @@ export function SessionComposerRegion(props: {
   const lift = createMemo(() => (rolled() ? 18 : 36 * value()))
   const full = createMemo(() => Math.max(78, store.height))
 
+  const openParent = () => {
+    const id = parentID()
+    if (!id) return
+    navigate(`/${route.params.dir}/session/${id}`)
+  }
+
   createEffect(() => {
     const el = store.body
     if (!el) return
-    const update = () => {
-      setStore("height", el.getBoundingClientRect().height)
-    }
+    const update = () => setStore("height", el.getBoundingClientRect().height)
+    createResizeObserver(store.body, update)
     update()
-    const observer = new ResizeObserver(update)
-    observer.observe(el)
-    onCleanup(() => observer.disconnect())
   })
 
   return (
     <div
       ref={props.setPromptDockRef}
       data-component="session-prompt-dock"
-      class="shrink-0 w-full pb-3 flex flex-col justify-center items-center bg-background-stronger pointer-events-none"
+      classList={{
+        "w-full flex flex-col justify-center items-center pointer-events-none": true,
+        "shrink-0 pb-3 bg-background-stronger": props.placement !== "inline",
+      }}
     >
       <div
         classList={{
-          "w-full px-3 pointer-events-auto": true,
+          "w-full pointer-events-auto": true,
+          "px-3": props.placement !== "inline",
+          [NEW_SESSION_CONTENT_WIDTH]: props.placement === "inline",
           "md:max-w-200 md:mx-auto 2xl:max-w-[1000px]": props.centered,
         }}
       >
@@ -159,7 +180,7 @@ export function SessionComposerRegion(props: {
           )}
         </Show>
 
-        <Show when={!props.state.blocked()}>
+        <Show when={showComposer()}>
           <Show
             when={prompt.ready()}
             fallback={
@@ -196,6 +217,8 @@ export function SessionComposerRegion(props: {
                   <SessionTodoDock
                     sessionID={route.params.id}
                     todos={props.state.todos()}
+                    collapsed={view.todoCollapsed.get()}
+                    onToggle={() => view.todoCollapsed.set(!view.todoCollapsed.get())}
                     collapseLabel={language.t("session.todo.collapse")}
                     expandLabel={language.t("session.todo.expand")}
                     dockProgress={value()}
@@ -235,17 +258,41 @@ export function SessionComposerRegion(props: {
                   onEdit={props.followup!.onEdit}
                 />
               </Show>
-              <PromptInput
-                ref={props.inputRef}
-                newSessionWorktree={props.newSessionWorktree}
-                onNewSessionWorktreeReset={props.onNewSessionWorktreeReset}
-                edit={props.followup?.edit}
-                onEditLoaded={props.followup?.onEditLoaded}
-                shouldQueue={props.followup?.queue}
-                onQueue={props.followup?.onQueue}
-                onAbort={props.followup?.onAbort}
-                onSubmit={props.onSubmit}
-              />
+              <Show
+                when={child()}
+                fallback={
+                  <Show when={!props.state.blocked()}>
+                    <PromptInput
+                      variant={props.placement === "inline" ? "new-session" : undefined}
+                      ref={props.inputRef}
+                      newSessionWorktree={props.newSessionWorktree}
+                      onNewSessionWorktreeReset={props.onNewSessionWorktreeReset}
+                      edit={props.followup?.edit}
+                      onEditLoaded={props.followup?.onEditLoaded}
+                      shouldQueue={props.followup?.queue}
+                      onQueue={props.followup?.onQueue}
+                      onAbort={props.followup?.onAbort}
+                      onSubmit={props.onSubmit}
+                    />
+                  </Show>
+                }
+              >
+                <div
+                  ref={props.inputRef}
+                  class="w-full rounded-[12px] border border-border-weak-base bg-background-base p-3 text-16-regular text-text-weak"
+                >
+                  <span>{language.t("session.child.promptDisabled")} </span>
+                  <Show when={parentID()}>
+                    <button
+                      type="button"
+                      class="text-text-base transition-colors hover:text-text-strong"
+                      onClick={openParent}
+                    >
+                      {language.t("session.child.backToParent")}
+                    </button>
+                  </Show>
+                </div>
+              </Show>
             </div>
           </Show>
         </Show>
