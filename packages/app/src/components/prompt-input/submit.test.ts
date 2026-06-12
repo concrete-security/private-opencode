@@ -61,6 +61,8 @@ beforeAll(async () => {
   mock.module("@solidjs/router", () => ({
     useNavigate: () => () => undefined,
     useParams: () => params,
+    useLocation: () => ({}),
+    useSearchParams: () => [{}, () => undefined],
   }))
 
   mock.module("@opencode-ai/sdk/v2/client", () => ({
@@ -74,7 +76,7 @@ beforeAll(async () => {
     showToast: () => 0,
   }))
 
-  mock.module("@opencode-ai/util/encode", () => ({
+  mock.module("@opencode-ai/core/util/encode", () => ({
     base64Encode: (value: string) => value,
   }))
 
@@ -103,6 +105,16 @@ beforeAll(async () => {
     }),
   }))
 
+  mock.module("@/context/server", () => ({
+    useServer: () => ({ key: "server-key" }),
+  }))
+
+  mock.module("@/context/tabs", () => ({
+    useTabs: () => ({
+      promoteDraft: () => undefined,
+    }),
+  }))
+
   mock.module("@/context/prompt", () => ({
     usePrompt: () => ({
       current: () => promptValue,
@@ -127,6 +139,7 @@ beforeAll(async () => {
   mock.module("@/context/sdk", () => ({
     useSDK: () => {
       const sdk = {
+        scope: "local",
         directory: "/repo/main",
         client: rootClient,
         url: "http://localhost:4096",
@@ -146,7 +159,7 @@ beforeAll(async () => {
           add: (value: {
             directory?: string
             sessionID?: string
-            message: { agent: string; model: { providerID: string; modelID: string }; variant?: string }
+            message: { agent: string; model: { providerID: string; modelID: string; variant?: string } }
           }) => {
             optimistic.push(value)
             optimisticSeeded.push(
@@ -162,8 +175,8 @@ beforeAll(async () => {
     }),
   }))
 
-  mock.module("@/context/global-sync", () => ({
-    useGlobalSync: () => ({
+  mock.module("@/context/server-sync", () => ({
+    useServerSync: () => ({
       child: (directory: string) => {
         syncedDirectories.push(directory)
         storedSessions[directory] ??= []
@@ -310,8 +323,7 @@ describe("prompt submit worktree selection", () => {
     expect(optimistic[0]).toMatchObject({
       message: {
         agent: "agent",
-        model: { providerID: "provider", modelID: "model" },
-        variant: "high",
+        model: { providerID: "provider", modelID: "model", variant: "high" },
       },
     })
   })
