@@ -1,5 +1,6 @@
 import { batch, createMemo, onCleanup, onMount, type Accessor } from "solid-js"
 import { createStore } from "solid-js/store"
+import { makeEventListener } from "@solid-primitives/event-listener"
 import { same } from "@/utils/same"
 
 const emptyTabs: string[] = []
@@ -18,6 +19,10 @@ type TabsInput = {
 }
 
 export const getSessionKey = (dir: string | undefined, id: string | undefined) => `${dir ?? ""}${id ? `/${id}` : ""}`
+
+export function shouldShowFileTree(input: { visible: boolean; opened: boolean }) {
+  return input.opened && input.visible
+}
 
 export const createSessionTabs = (input: TabsInput) => {
   const review = input.review ?? (() => false)
@@ -116,7 +121,7 @@ export const createOpenReviewFile = (input: {
         input.openTab(tab)
         input.setActive(tab)
       }
-      if (maybePromise instanceof Promise) maybePromise.then(open)
+      if (maybePromise instanceof Promise) void maybePromise.then(open)
       else open()
     })
   }
@@ -171,14 +176,9 @@ export const createSizing = () => {
   }
 
   onMount(() => {
-    window.addEventListener("pointerup", stop)
-    window.addEventListener("pointercancel", stop)
-    window.addEventListener("blur", stop)
-    onCleanup(() => {
-      window.removeEventListener("pointerup", stop)
-      window.removeEventListener("pointercancel", stop)
-      window.removeEventListener("blur", stop)
-    })
+    makeEventListener(window, "pointerup", stop)
+    makeEventListener(window, "pointercancel", stop)
+    makeEventListener(window, "blur", stop)
   })
 
   onCleanup(() => {
