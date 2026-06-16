@@ -1,8 +1,12 @@
-import { createEffect, onCleanup, onMount } from "solid-js"
+// @refresh reload
+
+import { createEffect, onMount } from "solid-js"
 import { createStore } from "solid-js/store"
+import { makeEventListener } from "@solid-primitives/event-listener"
 import { createSimpleContext } from "../context/helper"
 import oc2ThemeJson from "./themes/oc-2.json"
 import { resolveThemeVariant, themeToCss } from "./resolve"
+import { resolveThemeVariantV2, themeV2ToCss } from "./v2/resolve"
 import type { DesktopTheme } from "./types"
 
 export type ColorScheme = "light" | "dark" | "system"
@@ -131,21 +135,27 @@ function applyThemeCss(theme: DesktopTheme, themeId: string, mode: "light" | "da
   const variant = isDark ? theme.dark : theme.light
   const tokens = resolveThemeVariant(variant, isDark)
   const css = themeToCss(tokens)
+  const v2 = themeV2ToCss(resolveThemeVariantV2(variant, isDark))
 
   if (themeId !== "oc-2") {
-    write(isDark ? STORAGE_KEYS.THEME_CSS_DARK : STORAGE_KEYS.THEME_CSS_LIGHT, css)
+    write(isDark ? STORAGE_KEYS.THEME_CSS_DARK : STORAGE_KEYS.THEME_CSS_LIGHT, `${css}\n  ${v2}`)
   }
 
   const fullCss = `:root {
   color-scheme: ${mode};
   --text-mix-blend-mode: ${isDark ? "plus-lighter" : "multiply"};
   ${css}
+  ${v2}
 }`
 
   document.getElementById("oc-theme-preload")?.remove()
   ensureThemeStyleElement().textContent = fullCss
   document.documentElement.dataset.theme = themeId
   document.documentElement.dataset.colorScheme = mode
+
+  // Update theme-color meta tag to match light/dark mode
+  const meta = document.querySelector('meta[name="theme-color"]')
+  if (meta) meta.setAttribute("content", isDark ? "#131010" : "#F8F7F7")
 }
 
 function cacheThemeVariants(theme: DesktopTheme, themeId: string) {
@@ -155,7 +165,8 @@ function cacheThemeVariants(theme: DesktopTheme, themeId: string) {
     const variant = isDark ? theme.dark : theme.light
     const tokens = resolveThemeVariant(variant, isDark)
     const css = themeToCss(tokens)
-    write(isDark ? STORAGE_KEYS.THEME_CSS_DARK : STORAGE_KEYS.THEME_CSS_LIGHT, css)
+    const v2 = themeV2ToCss(resolveThemeVariantV2(variant, isDark))
+    write(isDark ? STORAGE_KEYS.THEME_CSS_DARK : STORAGE_KEYS.THEME_CSS_LIGHT, `${css}\n  ${v2}`)
   }
 }
 
@@ -237,19 +248,15 @@ export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
       }
     }
 
-    if (typeof window === "object") {
-      window.addEventListener("storage", onStorage)
-      onCleanup(() => window.removeEventListener("storage", onStorage))
-    }
-
     onMount(() => {
+      makeEventListener(window, "storage", onStorage)
+
       const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)")
       const onMedia = () => {
         if (store.colorScheme !== "system") return
         setStore("mode", getSystemMode())
       }
-      mediaQuery.addEventListener("change", onMedia)
-      onCleanup(() => mediaQuery.removeEventListener("change", onMedia))
+      makeEventListener(mediaQuery, "change", onMedia)
 
       const rawTheme = read(STORAGE_KEYS.THEME_ID)
       const savedTheme = normalize(rawTheme ?? props.defaultTheme) ?? "oc-2"
