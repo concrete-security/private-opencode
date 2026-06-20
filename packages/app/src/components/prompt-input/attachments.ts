@@ -1,6 +1,7 @@
-import { onCleanup, onMount } from "solid-js"
-import { showToast } from "@opencode-ai/ui/toast"
-import { usePrompt, type ContentPart, type ImageAttachmentPart } from "@/context/prompt"
+import { onMount } from "solid-js"
+import { makeEventListener } from "@solid-primitives/event-listener"
+import { showToast } from "@/utils/toast"
+import { type ContentPart, type ImageAttachmentPart, type usePrompt } from "@/context/prompt"
 import { useLanguage } from "@/context/language"
 import { uuid } from "@/utils/uuid"
 import { getCursorPosition } from "./editor-dom"
@@ -25,16 +26,18 @@ function dataUrl(file: File, mime: string) {
 }
 
 type PromptAttachmentsInput = {
+  prompt: ReturnType<typeof usePrompt>
   editor: () => HTMLDivElement | undefined
   isDialogActive: () => boolean
   setDraggingType: (type: "image" | "@mention" | null) => void
   focusEditor: () => void
   addPart: (part: ContentPart) => boolean
   readClipboardImage?: () => Promise<File | null>
+  getPathForFile?: (file: File) => string
 }
 
 export function createPromptAttachments(input: PromptAttachmentsInput) {
-  const prompt = usePrompt()
+  const prompt = input.prompt
   const language = useLanguage()
 
   const warn = () => {
@@ -61,6 +64,7 @@ export function createPromptAttachments(input: PromptAttachmentsInput) {
       type: "image",
       id: uuid(),
       filename: file.name,
+      sourcePath: input.getPathForFile?.(file) || undefined,
       mime,
       dataUrl: url,
     }
@@ -181,15 +185,9 @@ export function createPromptAttachments(input: PromptAttachmentsInput) {
   }
 
   onMount(() => {
-    document.addEventListener("dragover", handleGlobalDragOver)
-    document.addEventListener("dragleave", handleGlobalDragLeave)
-    document.addEventListener("drop", handleGlobalDrop)
-  })
-
-  onCleanup(() => {
-    document.removeEventListener("dragover", handleGlobalDragOver)
-    document.removeEventListener("dragleave", handleGlobalDragLeave)
-    document.removeEventListener("drop", handleGlobalDrop)
+    makeEventListener(document, "dragover", handleGlobalDragOver)
+    makeEventListener(document, "dragleave", handleGlobalDragLeave)
+    makeEventListener(document, "drop", handleGlobalDrop)
   })
 
   return {
