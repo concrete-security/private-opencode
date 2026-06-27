@@ -1,6 +1,7 @@
 import { useIsRouting, useLocation } from "@solidjs/router"
 import { batch, createEffect, onCleanup, onMount } from "solid-js"
 import { createStore } from "solid-js/store"
+import { makeEventListener } from "@solid-primitives/event-listener"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { useLanguage } from "@/context/language"
 
@@ -349,13 +350,12 @@ export function DebugBar() {
 
     syncHeap()
     start()
-    document.addEventListener("visibilitychange", vis)
+    makeEventListener(document, "visibilitychange", vis)
 
     onCleanup(() => {
       if (one !== 0) cancelAnimationFrame(one)
       if (two !== 0) cancelAnimationFrame(two)
       stop()
-      document.removeEventListener("visibilitychange", vis)
       for (const ob of obs) ob.disconnect()
     })
   })
@@ -363,7 +363,7 @@ export function DebugBar() {
   return (
     <aside
       aria-label={language.t("debugBar.ariaLabel")}
-      class="pointer-events-auto fixed bottom-3 right-3 z-50 w-[308px] max-w-[calc(100vw-1.5rem)] overflow-hidden rounded-xl border border-border-base bg-surface-raised-stronger-non-alpha p-0.5 text-text-strong shadow-[var(--shadow-lg-border-base)] sm:bottom-4 sm:right-4 sm:w-[324px]"
+      class="pointer-events-auto fixed bottom-3 right-3 z-50 hidden w-[308px] max-w-[calc(100vw-1.5rem)] overflow-hidden rounded-xl border border-border-base bg-surface-raised-stronger-non-alpha p-0.5 text-text-strong shadow-[var(--shadow-lg-border-base)] md:block sm:bottom-4 sm:right-4 sm:w-[324px]"
     >
       <div class="grid grid-cols-5 gap-px font-mono">
         <Cell
