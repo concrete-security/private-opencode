@@ -1,5 +1,5 @@
 import "./index.css"
-import { createAsync, query, redirect } from "@solidjs/router"
+import { createAsync, query } from "@solidjs/router"
 import { Title, Meta } from "@solidjs/meta"
 import { For, createMemo, createSignal, onCleanup, onMount } from "solid-js"
 //import { HttpHeader } from "@solidjs/start"
@@ -12,7 +12,7 @@ import { Footer } from "~/component/footer"
 import { Header } from "~/component/header"
 import { config } from "~/config"
 import { getLastSeenWorkspaceID } from "../workspace/common"
-import { IconMiniMax, IconZai } from "~/component/icon"
+import { IconMiniMax, IconMiMo, IconZai, IconAlibaba, IconDeepSeek } from "~/component/icon"
 import { useI18n } from "~/context/i18n"
 import { useLanguage } from "~/context/language"
 import { LocaleLinks } from "~/component/locale-links"
@@ -21,6 +21,24 @@ const checkLoggedIn = query(async () => {
   "use server"
   return await getLastSeenWorkspaceID().catch(() => undefined)
 }, "checkLoggedIn.get")
+
+const models = [
+  "Grok 4.5",
+  "GLM-5.2",
+  "GLM-5.1",
+  "Kimi K3",
+  "Kimi K2.7 Code",
+  "Kimi K2.6",
+  "MiMo-V2.5-Pro",
+  "MiMo-V2.5",
+  "Qwen3.7 Max",
+  "Qwen3.7 Plus",
+  "Qwen3.6 Plus",
+  "MiniMax M3",
+  "MiniMax M2.7",
+  "DeepSeek V4 Pro",
+  "DeepSeek V4 Flash",
+]
 
 function LimitsGraph(props: { href: string }) {
   let root!: HTMLElement
@@ -43,30 +61,34 @@ function LimitsGraph(props: { href: string }) {
     onCleanup(() => observer.disconnect())
   })
 
-  const free = 200
-  const models = [
-    { id: "glm", name: "GLM-5", req: 1150, d: "120ms" },
-    { id: "kimi", name: "Kimi K2.5", req: 1850, d: "240ms" },
-    { id: "minimax-m2.7", name: "MiniMax M2.7", req: 14000, d: "330ms" },
-    { id: "minimax-m2.5", name: "MiniMax M2.5", req: 20000, d: "360ms" },
+  const baseline = 200
+  const graph = [
+    { id: "grok-4.5", name: "Grok 4.5", req: 80, d: "50ms" },
+    { id: "kimi-k3", name: "Kimi K3", req: 280, baseReq: 140, d: "75ms" },
+    { id: "glm-5.2", name: "GLM-5.2", req: 880, d: "100ms" },
+    { id: "qwen3.7-max", name: "Qwen3.7 Max", req: 950, d: "110ms" },
+    { id: "kimi-k2.7-code", name: "Kimi K2.7 Code", req: 1150, d: "150ms" },
+    { id: "minimax-m3", name: "MiniMax M3", req: 3200, d: "210ms" },
+    { id: "mimo-v2.5-pro", name: "MiMo-V2.5-Pro", req: 3250, d: "240ms" },
+    { id: "deepseek-v4-pro", name: "DeepSeek V4 Pro", req: 3450, d: "270ms" },
+    { id: "qwen3.7-plus", name: "Qwen3.7 Plus", req: 4300, d: "300ms" },
+    { id: "mimo-v2.5", name: "MiMo-V2.5", req: 30100, d: "340ms" },
+    { id: "deepseek-v4-flash", name: "DeepSeek V4 Flash", req: 31650, d: "340ms" },
   ]
 
   const w = 720
-  const h = 220
   const left = 40
   const right = 60
   const top = 18
   const bottom = 44
   const plot = w - left - right
 
-  const ratio = (n: number) => n / free
-  const rmax = Math.max(1, ...models.map((m) => ratio(m.req)))
+  const ratio = (n: number) => n / baseline
+  const rmax = Math.max(1, ...graph.map((m) => ratio(m.req)))
   const log = (n: number) => Math.log10(Math.max(n, 1))
   const base = 24
-  const p = 1.8
+  const p = 2.2
   const x = (r: number) => left + base + Math.pow(log(r) / log(rmax), p) * (plot - base)
-  const start = (x(1) / w) * 100
-
   const ticks = [1, 5, 10, 25, 50, 100].filter((t) => t <= rmax)
   const labels = (() => {
     const set = new Set<number>()
@@ -86,12 +108,11 @@ function LimitsGraph(props: { href: string }) {
   })()
   const shown = ticks.filter((t) => labels.has(t))
   const bh = 8
-  const gap = 16
+  const gap = 20
   const step = bh + gap
-  const sep = bh + 40
-  const fy = top + 22
-  const gy = (i: number) => fy + sep + step * i
-  const my = models.length < 2 ? gy(0) : (gy(0) + gy(models.length - 1)) / 2
+  const gy = (i: number) => top + 22 + step * i
+  const h = gy(graph.length - 1) + bottom
+  const my = graph.length < 2 ? gy(0) : (gy(0) + gy(graph.length - 1)) / 2
   const px = (n: number) => `${(n / w) * 100}%`
   const py = (n: number) => `${(n / h) * 100}%`
   const lx = px(left - 16)
@@ -100,10 +121,9 @@ function LimitsGraph(props: { href: string }) {
   return (
     <figure
       data-component="limit-graph"
-      aria-label={i18n.t("go.graph.aria", { free: i18n.t("go.graph.free"), go: i18n.t("go.graph.go") })}
+      aria-label={i18n.t("go.graph.label")}
       data-visible={visible() ? "" : undefined}
       ref={root}
-      style={{ "--start": `${start}%` } as any}
     >
       <div data-slot="plot">
         <svg
@@ -126,22 +146,29 @@ function LimitsGraph(props: { href: string }) {
           <line x1={left} y1={top} x2={left} y2={h - bottom} data-stub />
 
           <g data-slot="bars">
-            <g style={{ "--d": "0ms" } as any}>
-              <rect x={left} y={fy - bh / 2} width={Math.max(0, x(1) - left)} height={bh} data-bar data-kind="free" />
-            </g>
-
-            <For each={models}>
+            <For each={graph}>
               {(m, i) => (
                 <g style={{ "--d": m.d } as any}>
                   <rect
                     x={left}
                     y={gy(i()) - bh / 2}
-                    width={Math.max(0, x(ratio(m.req)) - left)}
+                    width={Math.max(0, x(ratio(m.baseReq ?? m.req)) - left)}
                     height={bh}
                     data-bar
                     data-kind="go"
                     data-model={m.id}
                   />
+                  {m.baseReq && (
+                    <rect
+                      x={x(ratio(m.baseReq)) + 2}
+                      y={gy(i()) - bh / 2}
+                      width={Math.max(0, x(ratio(m.req)) - x(ratio(m.baseReq)) - 2)}
+                      height={bh}
+                      data-bar
+                      data-kind="promo"
+                      data-model={m.id}
+                    />
+                  )}
                 </g>
               )}
             </For>
@@ -149,9 +176,6 @@ function LimitsGraph(props: { href: string }) {
         </svg>
 
         <div data-slot="ylabels" aria-hidden="true">
-          <span data-ylabel style={{ "--x": lx, "--y": py(fy) } as any}>
-            {i18n.t("go.graph.free")}
-          </span>
           <span data-ylabel style={{ "--x": lx, "--y": py(my) } as any}>
             {i18n.t("go.graph.go")}
           </span>
@@ -168,11 +192,7 @@ function LimitsGraph(props: { href: string }) {
         </div>
 
         <div data-slot="pills" aria-hidden="true">
-          <span data-item data-kind="free" style={{ "--x": px(x(1)), "--y": py(fy), "--d": "0ms" } as any}>
-            <span data-value>{free.toLocaleString()}</span>
-            <span data-name>{i18n.t("go.graph.freePill")}</span>
-          </span>
-          <For each={models}>
+          <For each={graph}>
             {(m, i) => (
               <span
                 data-item
@@ -298,6 +318,15 @@ export default function Home() {
                 <div>
                   <IconZai width="24" height="24" />
                 </div>
+                <div>
+                  <IconAlibaba width="24" height="24" />
+                </div>
+                <div>
+                  <IconDeepSeek width="24" height="24" />
+                </div>
+                <div>
+                  <IconMiMo width="24" height="24" />
+                </div>
                 {/*
                 <div>
                   <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -415,7 +444,10 @@ export default function Home() {
                 <Faq question={i18n.t("go.faq.q1")}>{i18n.t("go.faq.a1")}</Faq>
               </li>
               <li>
-                <Faq question={i18n.t("go.faq.q2")}>{i18n.t("go.faq.a2")}</Faq>
+                <Faq question={i18n.t("go.faq.q2")}>
+                  {i18n.t("go.faq.a2")}
+                  <div data-slot="faq-models">{models.join(", ")}.</div>
+                </Faq>
               </li>
               <li>
                 <Faq question={i18n.t("go.faq.q9")}>{i18n.t("go.faq.a9")}</Faq>
