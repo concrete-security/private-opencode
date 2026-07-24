@@ -1,15 +1,20 @@
 import { Component, Show, createMemo, createResource, onMount, type JSX } from "solid-js"
-import { createStore } from "solid-js/store"
 import { Button } from "@opencode-ai/ui/button"
 import { Icon } from "@opencode-ai/ui/icon"
 import { Select } from "@opencode-ai/ui/select"
 import { Switch } from "@opencode-ai/ui/switch"
 import { TextField } from "@opencode-ai/ui/text-field"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
+import { Tag } from "@opencode-ai/ui/v2/badge-v2"
 import { useTheme, type ColorScheme } from "@opencode-ai/ui/theme/context"
-import { showToast } from "@opencode-ai/ui/toast"
+import { useDialog } from "@opencode-ai/ui/context/dialog"
+import { useParams } from "@solidjs/router"
 import { useLanguage } from "@/context/language"
-import { usePlatform } from "@/context/platform"
+import { usePermission } from "@/context/permission"
+import { usePlatform, type DisplayBackend } from "@/context/platform"
+import { useServerSync } from "@/context/server-sync"
+import { useServerSDK } from "@/context/server-sdk"
+import { useUpdaterAction } from "./updater-action"
 import {
   monoDefault,
   monoFontFamily,
@@ -17,8 +22,12 @@ import {
   sansDefault,
   sansFontFamily,
   sansInput,
+  terminalDefault,
+  terminalFontFamily,
+  terminalInput,
   useSettings,
 } from "@/context/settings"
+import { decode64 } from "@/utils/base64"
 import { playSoundById, SOUND_OPTIONS } from "@/utils/sound"
 import { Link } from "./link"
 import { SettingsList } from "./settings-list"
@@ -32,6 +41,18 @@ let demoSoundState = {
 type ThemeOption = {
   id: string
   name: string
+}
+
+type ShellOption = {
+  path: string
+  name: string
+  acceptable: boolean
+}
+
+type ShellSelectOption = {
+  id: string
+  value: string
+  label: string
 }
 
 // To prevent audio from overlapping/playing very quickly when navigating the settings menus,
@@ -64,84 +85,125 @@ const playDemoSound = (id: string | undefined) => {
 export const SettingsGeneral: Component = () => {
   const theme = useTheme()
   const language = useLanguage()
+  const permission = usePermission()
   const platform = usePlatform()
+  const dialog = useDialog()
+  const params = useParams()
   const settings = useSettings()
+
+  const updater = useUpdaterAction()
+
+  const linux = createMemo(() => platform.platform === "desktop" && platform.os === "linux")
+  const dir = createMemo(() => decode64(params.dir))
+  const accepting = createMemo(() => {
+    const value = dir()
+    if (!value) return false
+    if (!params.id) return permission.isAutoAcceptingDirectory(value)
+    return permission.isAutoAccepting(params.id, value)
+  })
+
+  const toggleAccept = (checked: boolean) => {
+    const value = dir()
+    if (!value) return
+
+    if (!params.id) {
+      if (permission.isAutoAcceptingDirectory(value) === checked) return
+      permission.toggleAutoAcceptDirectory(value)
+      return
+    }
+
+    if (checked) {
+      permission.enableAutoAccept(params.id, value)
+      return
+    }
+
+    permission.disableAutoAccept(params.id, value)
+  }
+  const desktop = createMemo(() => platform.platform === "desktop")
+
+  const themeOptions = createMemo<ThemeOption[]>(() => theme.ids().map((id) => ({ id, name: theme.name(id) })))
+
+  const serverSync = useServerSync()
+  const serverSdk = useServerSDK()
+
+  const [shells] = createResource(
+    () =>
+      serverSdk()
+        .client.pty.shells()
+        .then((res) => res.data ?? [])
+        .catch(() => [] as ShellOption[]),
+    { initialValue: [] as ShellOption[] },
+  )
+
+  const [displayBackend, { refetch: refetchDisplayBackend }] = createResource(
+    () => (linux() && platform.getDisplayBackend ? true : false),
+    () => Promise.resolve(platform.getDisplayBackend?.() ?? null).catch(() => null as DisplayBackend | null),
+    { initialValue: null as DisplayBackend | null },
+  )
+
+  const [pinchZoom, { mutate: setPinchZoom }] = createResource(
+    () => (desktop() && platform.getPinchZoomEnabled ? true : false),
+    () => Promise.resolve(platform.getPinchZoomEnabled?.() ?? false).catch(() => false),
+    { initialValue: false },
+  )
 
   onMount(() => {
     void theme.loadThemes()
   })
 
-  const [store, setStore] = createStore({
-    checking: false,
+  const autoOption = { id: "auto", value: "", label: language.t("settings.general.row.shell.autoDefault") }
+  const currentShell = createMemo(() => serverSync().data.config.shell ?? "")
+
+  const shellOptions = createMemo<ShellSelectOption[]>(() => {
+    const list = shells.latest
+    const current = serverSync().data.config.shell
+
+    const nameCounts = new Map<string, number>()
+    for (const s of list) {
+      nameCounts.set(s.name, (nameCounts.get(s.name) || 0) + 1)
+    }
+
+    const options = [
+      autoOption,
+      ...list.map((s) => {
+        const ambiguousName = (nameCounts.get(s.name) || 0) > 1
+        const text = ambiguousName ? s.path : s.name
+        const label = s.acceptable ? text : `${text} (${language.t("settings.general.row.shell.terminalOnly")})`
+        return {
+          id: s.path,
+          // Prefer name over path - "bash" is much cleaner than the explicit full route even when it may change due to PATH.
+          value: ambiguousName ? s.path : s.name,
+          label,
+        }
+      }),
+    ]
+
+    if (current && !options.some((o) => o.value === current)) {
+      options.push({ id: current, value: current, label: current })
+    }
+
+    return options
   })
 
-  const linux = createMemo(() => platform.platform === "desktop" && platform.os === "linux")
-
-  const check = () => {
-    if (!platform.checkUpdate) return
-    setStore("checking", true)
-
-    void platform
-      .checkUpdate()
-      .then((result) => {
-        if (!result.updateAvailable) {
-          showToast({
-            variant: "success",
-            icon: "circle-check",
-            title: language.t("settings.updates.toast.latest.title"),
-            description: language.t("settings.updates.toast.latest.description", { version: platform.version ?? "" }),
-          })
-          return
-        }
-
-        const actions =
-          platform.update && platform.restart
-            ? [
-                {
-                  label: language.t("toast.update.action.installRestart"),
-                  onClick: async () => {
-                    await platform.update!()
-                    await platform.restart!()
-                  },
-                },
-                {
-                  label: language.t("toast.update.action.notYet"),
-                  onClick: "dismiss" as const,
-                },
-              ]
-            : [
-                {
-                  label: language.t("toast.update.action.notYet"),
-                  onClick: "dismiss" as const,
-                },
-              ]
-
-        showToast({
-          persistent: true,
-          icon: "download",
-          title: language.t("toast.update.title"),
-          description: language.t("toast.update.description", { version: result.version ?? "" }),
-          actions,
-        })
-      })
-      .catch((err: unknown) => {
-        const message = err instanceof Error ? err.message : String(err)
-        showToast({ title: language.t("common.requestFailed"), description: message })
-      })
-      .finally(() => setStore("checking", false))
+  const onDisplayBackendChange = (checked: boolean) => {
+    const update = platform.setDisplayBackend?.(checked ? "wayland" : "auto")
+    if (!update) return
+    void update.finally(() => {
+      void refetchDisplayBackend()
+    })
   }
 
-  const themeOptions = createMemo<ThemeOption[]>(() => theme.ids().map((id) => ({ id, name: theme.name(id) })))
+  const onPinchZoomChange = (checked: boolean) => {
+    setPinchZoom(checked)
+    const update = platform.setPinchZoomEnabled?.(checked)
+    if (!update) return
+    void update.catch(() => setPinchZoom(!checked))
+  }
 
   const colorSchemeOptions = createMemo((): { value: ColorScheme; label: string }[] => [
     { value: "system", label: language.t("theme.scheme.system") },
     { value: "light", label: language.t("theme.scheme.light") },
     { value: "dark", label: language.t("theme.scheme.dark") },
-  ])
-
-  const followupOptions = createMemo((): { value: "queue" | "steer"; label: string }[] => [
-    { value: "queue", label: language.t("settings.general.row.followup.option.queue") },
-    { value: "steer", label: language.t("settings.general.row.followup.option.steer") },
   ])
 
   const languageOptions = createMemo(() =>
@@ -155,6 +217,7 @@ export const SettingsGeneral: Component = () => {
   const soundOptions = [noneSound, ...SOUND_OPTIONS]
   const mono = () => monoInput(settings.appearance.font())
   const sans = () => sansInput(settings.appearance.uiFont())
+  const terminal = () => terminalInput(settings.appearance.terminalFont())
 
   const soundSelectProps = (
     enabled: () => boolean,
@@ -186,6 +249,50 @@ export const SettingsGeneral: Component = () => {
     triggerVariant: "settings" as const,
   })
 
+  const InterfaceSection = () => (
+    <div class="flex flex-col gap-1">
+      <SettingsList>
+        <SettingsRow
+          title={
+            <span class="flex items-center gap-2">
+              {language.t("settings.general.row.newInterface.title")}
+              <Tag variant="accent">{language.t("settings.general.row.newInterface.badge")}</Tag>
+            </span>
+          }
+          description={language.t("settings.general.row.newInterface.description")}
+        >
+          <div data-action="settings-new-layout-designs">
+            <Switch
+              checked={settings.general.newLayoutDesigns()}
+              onChange={(checked) => {
+                settings.general.setNewLayoutDesigns(checked)
+                if (!checked) return
+                void import("@/components/settings-v2").then((module) => {
+                  void dialog.show(() => <module.DialogSettings />)
+                })
+              }}
+            />
+          </div>
+        </SettingsRow>
+      </SettingsList>
+    </div>
+  )
+
+  const InterfaceNoticeSection = () => (
+    <div class="flex flex-col gap-1">
+      <SettingsList>
+        <SettingsRow
+          title={language.t("settings.general.row.newInterfaceNotice.title")}
+          description={language.t("settings.general.row.newInterfaceNotice.description")}
+        >
+          <Button size="small" variant="ghost" onClick={settings.general.dismissNewInterfaceNotice}>
+            {language.t("settings.general.row.newInterfaceNotice.dismiss")}
+          </Button>
+        </SettingsRow>
+      </SettingsList>
+    </div>
+  )
+
   const GeneralSection = () => (
     <div class="flex flex-col gap-1">
       <SettingsList>
@@ -203,6 +310,37 @@ export const SettingsGeneral: Component = () => {
             variant="secondary"
             size="small"
             triggerVariant="settings"
+          />
+        </SettingsRow>
+
+        <SettingsRow
+          title={language.t("command.permissions.autoaccept.enable")}
+          description={language.t("toast.permissions.autoaccept.on.description")}
+        >
+          <div data-action="settings-auto-accept-permissions">
+            <Switch checked={accepting()} disabled={!dir()} onChange={toggleAccept} />
+          </div>
+        </SettingsRow>
+
+        <SettingsRow
+          title={language.t("settings.general.row.shell.title")}
+          description={language.t("settings.general.row.shell.description")}
+        >
+          <Select
+            data-action="settings-shell"
+            options={shellOptions()}
+            current={shellOptions().find((o) => o.value === currentShell()) ?? autoOption}
+            value={(o) => o.id}
+            label={(o) => o.label}
+            onSelect={(option) => {
+              if (!option) return
+              if (option.value === currentShell()) return
+              serverSync().updateConfig({ shell: option.value })
+            }}
+            variant="secondary"
+            size="small"
+            triggerVariant="settings"
+            triggerStyle={{ "min-width": "180px" }}
           />
         </SettingsRow>
 
@@ -241,23 +379,73 @@ export const SettingsGeneral: Component = () => {
             />
           </div>
         </SettingsRow>
+      </SettingsList>
+    </div>
+  )
+
+  const AdvancedSection = () => (
+    <div class="flex flex-col gap-1">
+      <h3 class="text-14-medium text-text-strong pb-2">{language.t("settings.general.section.advanced")}</h3>
+
+      <SettingsList>
+        <SettingsRow
+          title={language.t("settings.general.row.showFileTree.title")}
+          description={language.t("settings.general.row.showFileTree.description")}
+        >
+          <div data-action="settings-show-file-tree">
+            <Switch
+              checked={settings.general.showFileTree()}
+              onChange={(checked) => settings.general.setShowFileTree(checked)}
+            />
+          </div>
+        </SettingsRow>
 
         <SettingsRow
-          title={language.t("settings.general.row.followup.title")}
-          description={language.t("settings.general.row.followup.description")}
+          title={language.t("settings.general.row.showNavigation.title")}
+          description={language.t("settings.general.row.showNavigation.description")}
         >
-          <Select
-            data-action="settings-followup"
-            options={followupOptions()}
-            current={followupOptions().find((o) => o.value === settings.general.followup())}
-            value={(o) => o.value}
-            label={(o) => o.label}
-            onSelect={(option) => option && settings.general.setFollowup(option.value)}
-            variant="secondary"
-            size="small"
-            triggerVariant="settings"
-            triggerStyle={{ "min-width": "180px" }}
-          />
+          <div data-action="settings-show-navigation">
+            <Switch
+              checked={settings.general.showNavigation()}
+              onChange={(checked) => settings.general.setShowNavigation(checked)}
+            />
+          </div>
+        </SettingsRow>
+
+        <SettingsRow
+          title={language.t("settings.general.row.showSearch.title")}
+          description={language.t("settings.general.row.showSearch.description")}
+        >
+          <div data-action="settings-show-search">
+            <Switch
+              checked={settings.general.showSearch()}
+              onChange={(checked) => settings.general.setShowSearch(checked)}
+            />
+          </div>
+        </SettingsRow>
+
+        <SettingsRow
+          title={language.t("settings.general.row.showStatus.title")}
+          description={language.t("settings.general.row.showStatus.description")}
+        >
+          <div data-action="settings-show-status">
+            <Switch
+              checked={settings.general.showStatus()}
+              onChange={(checked) => settings.general.setShowStatus(checked)}
+            />
+          </div>
+        </SettingsRow>
+
+        <SettingsRow
+          title={language.t("settings.general.row.showCustomAgents.title")}
+          description={language.t("settings.general.row.showCustomAgents.description")}
+        >
+          <div data-action="settings-show-custom-agents">
+            <Switch
+              checked={settings.general.showCustomAgents()}
+              onChange={(checked) => settings.general.setShowCustomAgents(checked)}
+            />
+          </div>
         </SettingsRow>
       </SettingsList>
     </div>
@@ -279,11 +467,6 @@ export const SettingsGeneral: Component = () => {
             value={(o) => o.value}
             label={(o) => o.label}
             onSelect={(option) => option && theme.setColorScheme(option.value)}
-            onHighlight={(option) => {
-              if (!option) return
-              theme.previewColorScheme(option.value)
-              return () => theme.cancelPreview()
-            }}
             variant="secondary"
             size="small"
             triggerVariant="settings"
@@ -309,11 +492,6 @@ export const SettingsGeneral: Component = () => {
             onSelect={(option) => {
               if (!option) return
               theme.setTheme(option.id)
-            }}
-            onHighlight={(option) => {
-              if (!option) return
-              theme.previewTheme(option.id)
-              return () => theme.cancelPreview()
             }}
             variant="secondary"
             size="small"
@@ -363,6 +541,29 @@ export const SettingsGeneral: Component = () => {
               autocapitalize="off"
               class="text-12-regular"
               style={{ "font-family": monoFontFamily(settings.appearance.font()) }}
+            />
+          </div>
+        </SettingsRow>
+
+        <SettingsRow
+          title={language.t("settings.general.row.terminalFont.title")}
+          description={language.t("settings.general.row.terminalFont.description")}
+        >
+          <div class="w-full sm:w-[220px]">
+            <TextField
+              data-action="settings-terminal-font"
+              label={language.t("settings.general.row.terminalFont.title")}
+              hideLabel
+              type="text"
+              value={terminal()}
+              onChange={(value) => settings.appearance.setTerminalFont(value)}
+              placeholder={terminalDefault}
+              spellcheck={false}
+              autocorrect="off"
+              autocomplete="off"
+              autocapitalize="off"
+              class="text-12-regular"
+              style={{ "font-family": terminalFontFamily(settings.appearance.terminalFont()) }}
             />
           </div>
         </SettingsRow>
@@ -473,19 +674,6 @@ export const SettingsGeneral: Component = () => {
 
       <SettingsList>
         <SettingsRow
-          title={language.t("settings.updates.row.startup.title")}
-          description={language.t("settings.updates.row.startup.description")}
-        >
-          <div data-action="settings-updates-startup">
-            <Switch
-              checked={settings.updates.startup()}
-              disabled={!platform.checkUpdate}
-              onChange={(checked) => settings.updates.setStartup(checked)}
-            />
-          </div>
-        </SettingsRow>
-
-        <SettingsRow
           title={language.t("settings.general.row.releaseNotes.title")}
           description={language.t("settings.general.row.releaseNotes.description")}
         >
@@ -501,14 +689,51 @@ export const SettingsGeneral: Component = () => {
           title={language.t("settings.updates.row.check.title")}
           description={language.t("settings.updates.row.check.description")}
         >
-          <Button size="small" variant="secondary" disabled={store.checking || !platform.checkUpdate} onClick={check}>
-            {store.checking
-              ? language.t("settings.updates.action.checking")
-              : language.t("settings.updates.action.checkNow")}
+          <Button size="small" variant="secondary" disabled={!updater.action().run} onClick={updater.run}>
+            {language.t(updater.action().label)}
           </Button>
         </SettingsRow>
       </SettingsList>
     </div>
+  )
+
+  const DisplaySection = () => (
+    <Show when={desktop()}>
+      <div class="flex flex-col gap-1">
+        <h3 class="text-14-medium text-text-strong pb-2">{language.t("settings.general.section.display")}</h3>
+
+        <SettingsList>
+          <SettingsRow
+            title={language.t("settings.general.row.pinchZoom.title")}
+            description={language.t("settings.general.row.pinchZoom.description")}
+          >
+            <div data-action="settings-pinch-zoom">
+              <Switch checked={pinchZoom.latest} onChange={onPinchZoomChange} />
+            </div>
+          </SettingsRow>
+
+          <Show when={linux()}>
+            <SettingsRow
+              title={
+                <div class="flex items-center gap-2">
+                  <span>{language.t("settings.general.row.wayland.title")}</span>
+                  <Tooltip value={language.t("settings.general.row.wayland.tooltip")} placement="top">
+                    <span class="text-text-weak">
+                      <Icon name="help" size="small" />
+                    </span>
+                  </Tooltip>
+                </div>
+              }
+              description={language.t("settings.general.row.wayland.description")}
+            >
+              <div data-action="settings-wayland">
+                <Switch checked={displayBackend.latest === "wayland"} onChange={onDisplayBackendChange} />
+              </div>
+            </SettingsRow>
+          </Show>
+        </SettingsList>
+      </div>
+    </Show>
   )
 
   return (
@@ -520,6 +745,14 @@ export const SettingsGeneral: Component = () => {
       </div>
 
       <div class="flex flex-col gap-8 w-full">
+        <Show when={settings.general.layoutTransitionAvailable()}>
+          <InterfaceSection />
+        </Show>
+
+        <Show when={settings.general.newInterfaceNoticeVisible()}>
+          <InterfaceNoticeSection />
+        </Show>
+
         <GeneralSection />
 
         <AppearanceSection />
@@ -528,70 +761,12 @@ export const SettingsGeneral: Component = () => {
 
         <SoundsSection />
 
-        {/*<Show when={platform.platform === "desktop" && platform.os === "windows" && platform.getWslEnabled}>
-          {(_) => {
-            const [enabledResource, actions] = createResource(() => platform.getWslEnabled?.())
-            const enabled = () => (enabledResource.state === "pending" ? undefined : enabledResource.latest)
-
-            return (
-              <div class="flex flex-col gap-1">
-                <h3 class="text-14-medium text-text-strong pb-2">{language.t("settings.desktop.section.wsl")}</h3>
-
-                <SettingsList>
-                  <SettingsRow
-                    title={language.t("settings.desktop.wsl.title")}
-                    description={language.t("settings.desktop.wsl.description")}
-                  >
-                    <div data-action="settings-wsl">
-                      <Switch
-                        checked={enabled() ?? false}
-                        disabled={enabledResource.state === "pending"}
-                        onChange={(checked) => platform.setWslEnabled?.(checked)?.finally(() => actions.refetch())}
-                      />
-                    </div>
-                  </SettingsRow>
-                </SettingsList>
-              </div>
-            )
-          }}
-        </Show>*/}
-
         <UpdatesSection />
 
-        <Show when={linux()}>
-          {(_) => {
-            const [valueResource, actions] = createResource(() => platform.getDisplayBackend?.())
-            const value = () => (valueResource.state === "pending" ? undefined : valueResource.latest)
+        <DisplaySection />
 
-            const onChange = (checked: boolean) =>
-              platform.setDisplayBackend?.(checked ? "wayland" : "auto").finally(() => actions.refetch())
-
-            return (
-              <div class="flex flex-col gap-1">
-                <h3 class="text-14-medium text-text-strong pb-2">{language.t("settings.general.section.display")}</h3>
-
-                <SettingsList>
-                  <SettingsRow
-                    title={
-                      <div class="flex items-center gap-2">
-                        <span>{language.t("settings.general.row.wayland.title")}</span>
-                        <Tooltip value={language.t("settings.general.row.wayland.tooltip")} placement="top">
-                          <span class="text-text-weak">
-                            <Icon name="help" size="small" />
-                          </span>
-                        </Tooltip>
-                      </div>
-                    }
-                    description={language.t("settings.general.row.wayland.description")}
-                  >
-                    <div data-action="settings-wayland">
-                      <Switch checked={value() === "wayland"} onChange={onChange} />
-                    </div>
-                  </SettingsRow>
-                </SettingsList>
-              </div>
-            )
-          }}
+        <Show when={desktop()}>
+          <AdvancedSection />
         </Show>
       </div>
     </div>
