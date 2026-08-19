@@ -1,5 +1,5 @@
 import "./index.css"
-import { createAsync, query, redirect } from "@solidjs/router"
+import { createAsync, query } from "@solidjs/router"
 import { Title, Meta } from "@solidjs/meta"
 import { For, createMemo, createSignal, onCleanup, onMount } from "solid-js"
 //import { HttpHeader } from "@solidjs/start"
@@ -12,7 +12,7 @@ import { Footer } from "~/component/footer"
 import { Header } from "~/component/header"
 import { config } from "~/config"
 import { getLastSeenWorkspaceID } from "../workspace/common"
-import { IconMiniMax, IconZai } from "~/component/icon"
+import { IconMiniMax, IconMiMo, IconZai, IconAlibaba, IconDeepSeek } from "~/component/icon"
 import { useI18n } from "~/context/i18n"
 import { useLanguage } from "~/context/language"
 import { LocaleLinks } from "~/component/locale-links"
@@ -21,6 +21,29 @@ const checkLoggedIn = query(async () => {
   "use server"
   return await getLastSeenWorkspaceID().catch(() => undefined)
 }, "checkLoggedIn.get")
+
+const models = [
+  { name: "Grok 4.5", training: "go.faq.a5.notUsed", retention: "go.faq.a5.retention30" },
+  { name: "GPT 5.6 Luna", training: "go.faq.a5.notUsed", retention: "go.faq.a5.retention30" },
+  { name: "GLM-5.3", training: "go.faq.a5.notUsed", retention: "go.faq.a5.retention0" },
+  { name: "GLM-5.2", training: "go.faq.a5.notUsed", retention: "go.faq.a5.retention0" },
+  { name: "GLM-5.1", training: "go.faq.a5.notUsed", retention: "go.faq.a5.retention0" },
+  { name: "Kimi K3", training: "go.faq.a5.notUsed", retention: "go.faq.a5.retention0" },
+  { name: "Kimi K2.7 Code", training: "go.faq.a5.notUsed", retention: "go.faq.a5.retention0" },
+  { name: "Kimi K2.6", training: "go.faq.a5.notUsed", retention: "go.faq.a5.retention0" },
+  { name: "MiMo-V2.5-Pro", training: "go.faq.a5.notUsed", retention: "go.faq.a5.retention0" },
+  { name: "MiMo-V2.5", training: "go.faq.a5.notUsed", retention: "go.faq.a5.retention0" },
+  { name: "Qwen3.8 Max", training: "go.faq.a5.notUsed", retention: "go.faq.a5.retention0" },
+  { name: "Qwen3.7 Max", training: "go.faq.a5.notUsed", retention: "go.faq.a5.retention0" },
+  { name: "Qwen3.7 Plus", training: "go.faq.a5.notUsed", retention: "go.faq.a5.retention0" },
+  { name: "Qwen3.6 Plus", training: "go.faq.a5.notUsed", retention: "go.faq.a5.retention0" },
+  { name: "MiniMax M3", training: "go.faq.a5.notUsed", retention: "go.faq.a5.retention0" },
+  { name: "MiniMax M2.7", training: "go.faq.a5.notUsed", retention: "go.faq.a5.retention0" },
+  { name: "Muse Spark 1.2 Contributor", training: "go.faq.a5.used", retention: "go.faq.a5.notZdr" },
+  { name: "DeepSeek V4 Pro", training: "go.faq.a5.notUsed", retention: "go.faq.a5.retention0" },
+  { name: "DeepSeek V4 Flash", training: "go.faq.a5.notUsed", retention: "go.faq.a5.retention0" },
+  { name: "Hy3", training: "go.faq.a5.notUsed", retention: "go.faq.a5.retention0" },
+] as const
 
 function LimitsGraph(props: { href: string }) {
   let root!: HTMLElement
@@ -43,31 +66,37 @@ function LimitsGraph(props: { href: string }) {
     onCleanup(() => observer.disconnect())
   })
 
-  const free = 200
-  const models = [
-    { id: "glm", name: "GLM-5", req: 1150, d: "120ms" },
-    { id: "kimi", name: "Kimi K2.5", req: 1850, d: "240ms" },
-    { id: "minimax-m2.7", name: "MiniMax M2.7", req: 14000, d: "330ms" },
-    { id: "minimax-m2.5", name: "MiniMax M2.5", req: 20000, d: "360ms" },
+  const baseline = 100
+  const graph = [
+    { id: "kimi-k3", name: "Kimi K3", req: 110, d: "50ms" },
+    { id: "grok-4.5", name: "Grok 4.5", req: 120, d: "75ms" },
+    { id: "qwen3.8-max", name: "Qwen3.8 Max", req: 160, d: "90ms" },
+    { id: "glm-5.2", name: "GLM-5.2", req: 880, d: "100ms" },
+    { id: "deepseek-v4-pro", name: "DeepSeek V4 Pro", req: 1050, d: "150ms" },
+    { id: "minimax-m3", name: "MiniMax M3", req: 3200, d: "210ms" },
+    { id: "gpt-5.6-luna", name: "GPT 5.6 Luna", req: 2050, d: "290ms" },
+    { id: "qwen3.7-plus", name: "Qwen3.7 Plus", req: 4300, d: "300ms" },
+    { id: "hy3", name: "Hy3", req: 4300, d: "320ms" },
+    { id: "deepseek-v4-flash", name: "DeepSeek V4 Flash", req: 7600, d: "330ms" },
+    { id: "mimo-v2.5", name: "MiMo-V2.5", req: 30100, d: "340ms" },
+    { id: "muse-spark-1.2-contributor", name: "Muse Spark 1.2 Contributor", req: 45300, edge: true, d: "360ms" },
   ]
 
-  const w = 720
-  const h = 220
+  const w = 1040
+  const chartW = 720
   const left = 40
   const right = 60
   const top = 18
   const bottom = 44
-  const plot = w - left - right
+  const plot = chartW - left - right
 
-  const ratio = (n: number) => n / free
-  const rmax = Math.max(1, ...models.map((m) => ratio(m.req)))
+  const ratio = (n: number) => n / baseline
+  const rmax = Math.max(1, ...graph.map((m) => ratio(m.req)))
   const log = (n: number) => Math.log10(Math.max(n, 1))
   const base = 24
-  const p = 1.8
+  const p = 2.2
   const x = (r: number) => left + base + Math.pow(log(r) / log(rmax), p) * (plot - base)
-  const start = (x(1) / w) * 100
-
-  const ticks = [1, 5, 10, 25, 50, 100].filter((t) => t <= rmax)
+  const ticks = [1, 5, 10, 25, 50, 100, 250].filter((t) => t <= rmax)
   const labels = (() => {
     const set = new Set<number>()
     let last = -Infinity
@@ -86,12 +115,11 @@ function LimitsGraph(props: { href: string }) {
   })()
   const shown = ticks.filter((t) => labels.has(t))
   const bh = 8
-  const gap = 16
+  const gap = 20
   const step = bh + gap
-  const sep = bh + 40
-  const fy = top + 22
-  const gy = (i: number) => fy + sep + step * i
-  const my = models.length < 2 ? gy(0) : (gy(0) + gy(models.length - 1)) / 2
+  const gy = (i: number) => top + 22 + step * i
+  const h = gy(graph.length - 1) + bottom
+  const my = graph.length < 2 ? gy(0) : (gy(0) + gy(graph.length - 1)) / 2
   const px = (n: number) => `${(n / w) * 100}%`
   const py = (n: number) => `${(n / h) * 100}%`
   const lx = px(left - 16)
@@ -100,10 +128,9 @@ function LimitsGraph(props: { href: string }) {
   return (
     <figure
       data-component="limit-graph"
-      aria-label={i18n.t("go.graph.aria", { free: i18n.t("go.graph.free"), go: i18n.t("go.graph.go") })}
+      aria-label={i18n.t("go.graph.label")}
       data-visible={visible() ? "" : undefined}
       ref={root}
-      style={{ "--start": `${start}%` } as any}
     >
       <div data-slot="plot">
         <svg
@@ -114,23 +141,13 @@ function LimitsGraph(props: { href: string }) {
           style={{ height: `${h}px` }}
         >
           <g data-slot="grid">
-            <For each={ticks}>
-              {(t) => (
-                <g>
-                  <line x1={x(t)} y1={top} x2={x(t)} y2={h - bottom} data-grid />
-                </g>
-              )}
-            </For>
+            <For each={ticks}>{(t) => <line x1={x(t)} y1={top} x2={x(t)} y2={h - bottom} data-grid />}</For>
           </g>
 
           <line x1={left} y1={top} x2={left} y2={h - bottom} data-stub />
 
           <g data-slot="bars">
-            <g style={{ "--d": "0ms" } as any}>
-              <rect x={left} y={fy - bh / 2} width={Math.max(0, x(1) - left)} height={bh} data-bar data-kind="free" />
-            </g>
-
-            <For each={models}>
+            <For each={graph}>
               {(m, i) => (
                 <g style={{ "--d": m.d } as any}>
                   <rect
@@ -149,9 +166,6 @@ function LimitsGraph(props: { href: string }) {
         </svg>
 
         <div data-slot="ylabels" aria-hidden="true">
-          <span data-ylabel style={{ "--x": lx, "--y": py(fy) } as any}>
-            {i18n.t("go.graph.free")}
-          </span>
           <span data-ylabel style={{ "--x": lx, "--y": py(my) } as any}>
             {i18n.t("go.graph.go")}
           </span>
@@ -160,7 +174,7 @@ function LimitsGraph(props: { href: string }) {
         <div data-slot="xlabels" aria-hidden="true">
           <For each={shown}>
             {(t) => (
-              <span data-xlabel style={{ "--x": px(x(t)), "--y": ty } as any}>
+              <span data-xlabel data-tick={t} style={{ "--x": px(x(t)), "--y": ty } as any}>
                 {i18n.t("go.graph.tick", { n: t })}
               </span>
             )}
@@ -168,16 +182,13 @@ function LimitsGraph(props: { href: string }) {
         </div>
 
         <div data-slot="pills" aria-hidden="true">
-          <span data-item data-kind="free" style={{ "--x": px(x(1)), "--y": py(fy), "--d": "0ms" } as any}>
-            <span data-value>{free.toLocaleString()}</span>
-            <span data-name>{i18n.t("go.graph.freePill")}</span>
-          </span>
-          <For each={models}>
+          <For each={graph}>
             {(m, i) => (
               <span
                 data-item
                 data-kind="go"
                 data-model={m.id}
+                data-edge={"edge" in m ? "" : undefined}
                 style={{ "--x": px(x(ratio(m.req))), "--y": py(gy(i())), "--d": m.d } as any}
               >
                 <span data-value>{m.req.toLocaleString()}</span>
@@ -298,6 +309,15 @@ export default function Home() {
                 <div>
                   <IconZai width="24" height="24" />
                 </div>
+                <div>
+                  <IconAlibaba width="24" height="24" />
+                </div>
+                <div>
+                  <IconDeepSeek width="24" height="24" />
+                </div>
+                <div>
+                  <IconMiMo width="24" height="24" />
+                </div>
                 {/*
                 <div>
                   <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -415,7 +435,12 @@ export default function Home() {
                 <Faq question={i18n.t("go.faq.q1")}>{i18n.t("go.faq.a1")}</Faq>
               </li>
               <li>
-                <Faq question={i18n.t("go.faq.q2")}>{i18n.t("go.faq.a2")}</Faq>
+                <Faq question={i18n.t("go.faq.q2")}>
+                  {i18n.t("go.faq.a2")}
+                  <ul data-slot="faq-models">
+                    <For each={models}>{(model) => <li>{model.name}</li>}</For>
+                  </ul>
+                </Faq>
               </li>
               <li>
                 <Faq question={i18n.t("go.faq.q9")}>{i18n.t("go.faq.a9")}</Faq>
@@ -432,7 +457,56 @@ export default function Home() {
                 </Faq>
               </li>
               <li>
-                <Faq question={i18n.t("go.faq.q5")}>{i18n.t("go.faq.a5.body")}</Faq>
+                <Faq question={i18n.t("go.faq.q5")}>
+                  <div data-slot="faq-model-table">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>{i18n.t("go.faq.a5.model")}</th>
+                          <th>{i18n.t("go.faq.a5.training")}</th>
+                          <th>{i18n.t("go.faq.a5.retention")}</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <For each={models}>
+                          {(model) => (
+                            <tr>
+                              <td>{model.name}</td>
+                              <td>{i18n.t(model.training)}</td>
+                              <td>{i18n.t(model.retention)}</td>
+                            </tr>
+                          )}
+                        </For>
+                      </tbody>
+                    </table>
+                  </div>
+                  <div data-slot="faq-retention-notes">
+                    <p>
+                      <strong>Grok 4.5:</strong> {i18n.t("go.faq.a5.grokRetention")}{" "}
+                      <a href="https://docs.x.ai/developers/faq/security#what-is-zero-data-retention-zdr">
+                        {i18n.t("go.faq.a5.learnMore")}
+                      </a>
+                      .
+                    </p>
+                    <p>
+                      <strong>GPT 5.6 Luna:</strong> {i18n.t("go.faq.a5.gptRetention")}{" "}
+                      <a href="https://developers.openai.com/api/docs/guides/your-data#data-retention-controls-for-abuse-monitoring">
+                        {i18n.t("go.faq.a5.learnMore")}
+                      </a>
+                      .
+                    </p>
+                    <p>
+                      <strong>Muse Spark 1.2 Contributor:</strong> {i18n.t("go.faq.a5.museRetention")}{" "}
+                      <a href="https://dev.meta.ai/docs/pricing-rate-limits#contributor-tier">
+                        {i18n.t("go.faq.a5.learnMore")}
+                      </a>
+                      .
+                    </p>
+                    <p>
+                      <strong>DeepSeek V4 Flash:</strong> {i18n.t("go.faq.a5.deepseekRetention")}
+                    </p>
+                  </div>
+                </Faq>
               </li>
               <li>
                 <Faq question={i18n.t("go.faq.q6")}>{i18n.t("go.faq.a6")}</Faq>
