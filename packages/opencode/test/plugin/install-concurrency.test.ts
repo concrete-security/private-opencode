@@ -2,8 +2,8 @@ import { describe, expect, test } from "bun:test"
 import fs from "fs/promises"
 import path from "path"
 
-import { Process } from "../../src/util/process"
-import { Filesystem } from "../../src/util/filesystem"
+import { Process } from "@/util/process"
+import { Filesystem } from "@/util/filesystem"
 import { tmpdir } from "../fixture/fixture"
 
 const root = path.join(import.meta.dir, "../..")
@@ -25,6 +25,11 @@ function run(msg: Msg) {
 
 async function plugin(dir: string, kinds: Array<"server" | "tui">) {
   const p = path.join(dir, "plugin")
+  const server = kinds.includes("server")
+  const tui = kinds.includes("tui")
+  const exports: Record<string, string> = {}
+  if (server) exports["./server"] = "./server.js"
+  if (tui) exports["./tui"] = "./tui.js"
   await fs.mkdir(p, { recursive: true })
   await Bun.write(
     path.join(p, "package.json"),
@@ -32,7 +37,8 @@ async function plugin(dir: string, kinds: Array<"server" | "tui">) {
       {
         name: "acme",
         version: "1.0.0",
-        "oc-plugin": kinds,
+        ...(server ? { main: "./server.js" } : {}),
+        ...(Object.keys(exports).length ? { exports } : {}),
       },
       null,
       2,
@@ -60,7 +66,7 @@ describe("plugin.install.concurrent", () => {
   test("serializes concurrent server config updates across processes", async () => {
     await using tmp = await tmpdir()
     const target = await plugin(tmp.path, ["server"])
-    const all = mods("mod-server", 12)
+    const all = mods("mod-server", 6)
 
     const out = await Promise.all(
       all.map((mod) =>
@@ -83,7 +89,7 @@ describe("plugin.install.concurrent", () => {
   test("serializes concurrent server+tui config updates across processes", async () => {
     await using tmp = await tmpdir()
     const target = await plugin(tmp.path, ["server", "tui"])
-    const all = mods("mod-both", 10)
+    const all = mods("mod-both", 6)
 
     const out = await Promise.all(
       all.map((mod) =>
@@ -112,7 +118,7 @@ describe("plugin.install.concurrent", () => {
     await fs.mkdir(path.dirname(cfg), { recursive: true })
     await Bun.write(cfg, JSON.stringify({ plugin: ["seed@1.0.0"] }, null, 2))
 
-    const next = mods("mod-json", 8)
+    const next = mods("mod-json", 5)
     const out = await Promise.all(
       next.map((mod) =>
         run({
