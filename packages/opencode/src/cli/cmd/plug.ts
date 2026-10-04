@@ -1,16 +1,16 @@
 import { intro, log, outro, spinner } from "@clack/prompts"
-import type { Argv } from "yargs"
+import { Effect } from "effect"
 
-import { ConfigPaths } from "../../config/paths"
-import { Global } from "../../global"
+import { ConfigPaths } from "@/config/paths"
+import { Global } from "@opencode-ai/core/global"
 import { installPlugin, patchPluginConfig, readPluginManifest } from "../../plugin/install"
 import { resolvePluginTarget } from "../../plugin/shared"
-import { Instance } from "../../project/instance"
 import { errorMessage } from "../../util/error"
-import { Filesystem } from "../../util/filesystem"
-import { Process } from "../../util/process"
+import { Filesystem } from "@/util/filesystem"
+import { Process } from "@/util/process"
 import { UI } from "../ui"
-import { cmd } from "./cmd"
+import { effectCmd } from "../effect-cmd"
+import { InstanceRef } from "@/effect/instance-ref"
 
 type Spin = {
   start: (msg: string) => void
@@ -114,8 +114,10 @@ export function createPlugTask(input: PlugInput, dep: PlugDeps = defaultPlugDeps
 
       if (manifest.code === "manifest_no_targets") {
         inspect.stop("No plugin targets found", 1)
-        dep.log.error(`"${mod}" does not declare supported targets in package.json`)
-        dep.log.info('Expected: "oc-plugin": ["server", "tui"] or tuples like [["tui", { ... }]].')
+        dep.log.error(`"${mod}" does not expose plugin entrypoints in package.json`)
+        dep.log.info(
+          'Expected one of: exports["./tui"], exports["./server"], package.json main for server, or package.json["oc-themes"] for tui themes.',
+        )
         return false
       }
 
@@ -173,12 +175,12 @@ export function createPlugTask(input: PlugInput, dep: PlugDeps = defaultPlugDeps
   }
 }
 
-export const PluginCommand = cmd({
+export const PluginCommand = effectCmd({
   command: "plugin <module>",
   aliases: ["plug"],
   describe: "install plugin and update config",
-  builder: (yargs: Argv) => {
-    return yargs
+  builder: (yargs) =>
+    yargs
       .positional("module", {
         type: "string",
         describe: "npm module name",
@@ -194,9 +196,8 @@ export const PluginCommand = cmd({
         type: "boolean",
         default: false,
         describe: "replace existing plugin version",
-      })
-  },
-  handler: async (args) => {
+      }),
+  handler: Effect.fn("Cli.plug")(function* (args) {
     const mod = String(args.module ?? "").trim()
     if (!mod) {
       UI.error("module is required")
@@ -212,20 +213,18 @@ export const PluginCommand = cmd({
       global: Boolean(args.global),
       force: Boolean(args.force),
     })
-    let ok = true
 
-    await Instance.provide({
-      directory: process.cwd(),
-      fn: async () => {
-        ok = await run({
-          vcs: Instance.project.vcs,
-          worktree: Instance.worktree,
-          directory: Instance.directory,
-        })
-      },
-    })
+    const ctx = yield* InstanceRef
+    if (!ctx) return
+    const ok = yield* Effect.promise(() =>
+      run({
+        vcs: ctx.project.vcs,
+        worktree: ctx.worktree,
+        directory: ctx.directory,
+      }),
+    )
 
     outro("Done")
     if (!ok) process.exitCode = 1
-  },
+  }),
 })
