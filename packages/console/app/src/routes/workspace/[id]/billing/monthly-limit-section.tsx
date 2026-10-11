@@ -2,7 +2,7 @@ import { json, action, useParams, createAsync, useSubmission } from "@solidjs/ro
 import { createEffect, Show } from "solid-js"
 import { createStore } from "solid-js/store"
 import { withActor } from "~/context/auth.withActor"
-import { Billing } from "@opencode-ai/console-core/billing.js"
+import { Billing } from "@opencode/console-core/billing.js"
 import styles from "./monthly-limit-section.module.css"
 import { queryBillingInfo } from "../../common"
 import { useI18n } from "~/context/i18n"
@@ -10,11 +10,11 @@ import { formError, localizeError } from "~/lib/form-error"
 
 const setMonthlyLimit = action(async (form: FormData) => {
   "use server"
-  const limit = form.get("limit")?.toString()
+  const limit = form.get("limit") as string | null
   if (!limit) return { error: formError.limitRequired }
   const numericLimit = parseInt(limit)
   if (numericLimit < 0) return { error: formError.monthlyLimitInvalid }
-  const workspaceID = form.get("workspaceID")?.toString()
+  const workspaceID = form.get("workspaceID") as string | null
   if (!workspaceID) return { error: formError.workspaceRequired }
   return json(
     await withActor(

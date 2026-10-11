@@ -7,7 +7,7 @@ import theme from "toolbeam-docs-theme"
 import config from "./config.mjs"
 import { rehypeHeadingIds } from "@astrojs/markdown-remark"
 import rehypeAutolinkHeadings from "rehype-autolink-headings"
-import { spawnSync } from "child_process"
+import { copyFileSync } from "fs"
 
 // https://astro.build/config
 export default defineConfig({
@@ -259,10 +259,12 @@ export default defineConfig({
             "commands",
             "formatters",
             "permissions",
+            "policies",
             "lsp",
             "mcp-servers",
             "acp",
             "skills",
+            "references",
             "custom-tools",
           ],
         },
@@ -294,9 +296,11 @@ export default defineConfig({
       ],
       components: {
         Hero: "./src/components/Hero.astro",
+        PageFrame: "./src/components/PageFrame.astro",
         Head: "./src/components/Head.astro",
         Header: "./src/components/Header.astro",
         Footer: "./src/components/Footer.astro",
+        LanguageSelect: "./src/components/LanguageSelect.astro",
         SiteTitle: "./src/components/SiteTitle.astro",
       },
       plugins: [
@@ -313,8 +317,9 @@ function configSchema() {
     name: "configSchema",
     hooks: {
       "astro:build:done": async () => {
-        console.log("generating config schema")
-        spawnSync("../opencode/script/schema.ts", ["./dist/config.json", "./dist/tui.json"])
+        // V1 schemas are frozen in the console app since packages/opencode lives on the v1 branch.
+        copyFileSync("../console/app/public/config.json", "./dist/config.json")
+        copyFileSync("../console/app/public/tui.json", "./dist/tui.json")
       },
     },
   }

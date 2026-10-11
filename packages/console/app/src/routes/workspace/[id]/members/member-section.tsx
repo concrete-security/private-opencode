@@ -3,9 +3,9 @@ import { createEffect, For, Show } from "solid-js"
 import { withActor } from "~/context/auth.withActor"
 import { createStore } from "solid-js/store"
 import styles from "./member-section.module.css"
-import { UserRole } from "@opencode-ai/console-core/schema/user.sql.js"
-import { Actor } from "@opencode-ai/console-core/actor.js"
-import { User } from "@opencode-ai/console-core/user.js"
+import { UserRole } from "@opencode/console-core/schema/user.sql.js"
+import { Actor } from "@opencode/console-core/actor.js"
+import { User } from "@opencode/console-core/user.js"
 import { RoleDropdown } from "./role-dropdown"
 import { useI18n } from "~/context/i18n"
 import { useLanguage } from "~/context/language"
@@ -24,13 +24,13 @@ const listMembers = query(async (workspaceID: string) => {
 
 const inviteMember = action(async (form: FormData) => {
   "use server"
-  const email = form.get("email")?.toString().trim()
+  const email = (form.get("email") as string | null)?.trim()
   if (!email) return { error: formError.emailRequired }
-  const workspaceID = form.get("workspaceID")?.toString()
+  const workspaceID = form.get("workspaceID") as string | null
   if (!workspaceID) return { error: formError.workspaceRequired }
-  const role = form.get("role")?.toString() as (typeof UserRole)[number]
+  const role = form.get("role") as (typeof UserRole)[number] | null
   if (!role) return { error: formError.roleRequired }
-  const limit = form.get("limit")?.toString()
+  const limit = form.get("limit") as string | null
   const monthlyLimit = limit && limit.trim() !== "" ? parseInt(limit) : null
   if (monthlyLimit !== null && monthlyLimit < 0) return { error: formError.monthlyLimitInvalid }
   return json(
@@ -47,9 +47,9 @@ const inviteMember = action(async (form: FormData) => {
 
 const removeMember = action(async (form: FormData) => {
   "use server"
-  const id = form.get("id")?.toString()
+  const id = form.get("id") as string | null
   if (!id) return { error: formError.idRequired }
-  const workspaceID = form.get("workspaceID")?.toString()
+  const workspaceID = form.get("workspaceID") as string | null
   if (!workspaceID) return { error: formError.workspaceRequired }
   return json(
     await withActor(
@@ -66,13 +66,13 @@ const removeMember = action(async (form: FormData) => {
 const updateMember = action(async (form: FormData) => {
   "use server"
 
-  const id = form.get("id")?.toString()
+  const id = form.get("id") as string | null
   if (!id) return { error: formError.idRequired }
-  const workspaceID = form.get("workspaceID")?.toString()
+  const workspaceID = form.get("workspaceID") as string | null
   if (!workspaceID) return { error: formError.workspaceRequired }
-  const role = form.get("role")?.toString() as (typeof UserRole)[number]
+  const role = form.get("role") as (typeof UserRole)[number] | null
   if (!role) return { error: formError.roleRequired }
-  const limit = form.get("limit")?.toString()
+  const limit = form.get("limit") as string | null
   const monthlyLimit = limit && limit.trim() !== "" ? parseInt(limit) : null
   if (monthlyLimit !== null && monthlyLimit < 0) return { error: formError.monthlyLimitInvalid }
 
@@ -118,7 +118,7 @@ function MemberRow(props: {
     }
     setStore("editing", true)
     setStore("selectedRole", props.member.role)
-    setStore("limit", props.member.monthlyLimit?.toString() ?? "")
+    setStore("limit", props.member.monthlyLimit != null ? String(props.member.monthlyLimit) : "")
   }
 
   function hide() {

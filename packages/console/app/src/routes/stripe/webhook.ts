@@ -1,13 +1,15 @@
-import { Billing } from "@opencode-ai/console-core/billing.js"
+import type { Stripe } from "stripe"
+import { Billing } from "@opencode/console-core/billing.js"
 import type { APIEvent } from "@solidjs/start/server"
-import { and, Database, eq, sql } from "@opencode-ai/console-core/drizzle/index.js"
-import { BillingTable, LiteTable, PaymentTable } from "@opencode-ai/console-core/schema/billing.sql.js"
-import { Identifier } from "@opencode-ai/console-core/identifier.js"
-import { centsToMicroCents } from "@opencode-ai/console-core/util/price.js"
-import { Actor } from "@opencode-ai/console-core/actor.js"
-import { Resource } from "@opencode-ai/console-resource"
-import { LiteData } from "@opencode-ai/console-core/lite.js"
-import { BlackData } from "@opencode-ai/console-core/black.js"
+import { and, Database, eq, sql } from "@opencode/console-core/drizzle/index.js"
+import { BillingTable, LiteTable, PaymentTable } from "@opencode/console-core/schema/billing.sql.js"
+import { Identifier } from "@opencode/console-core/identifier.js"
+import { centsToMicroCents } from "@opencode/console-core/util/price.js"
+import { Actor } from "@opencode/console-core/actor.js"
+import { Resource } from "@opencode/console-resource"
+import { LiteData } from "@opencode/console-core/lite.js"
+import { BlackData } from "@opencode/console-core/black.js"
+import { Referral } from "@opencode/console-core/referral.js"
 
 export async function POST(input: APIEvent) {
   const body = await Billing.stripe().webhooks.constructEventAsync(
@@ -108,30 +110,22 @@ export async function POST(input: APIEvent) {
       if (type === "lite") {
         const workspaceID = body.data.object.metadata?.workspaceID
         const userID = body.data.object.metadata?.userID
+        const userEmail = body.data.object.metadata?.userEmail
+        const coupon = body.data.object.metadata?.coupon
         const customerID = body.data.object.customer as string
         const invoiceID = body.data.object.latest_invoice as string
         const subscriptionID = body.data.object.id as string
+        const paymentMethodID = body.data.object.default_payment_method as string
 
         if (!workspaceID) throw new Error("Workspace ID not found")
         if (!userID) throw new Error("User ID not found")
         if (!customerID) throw new Error("Customer ID not found")
         if (!invoiceID) throw new Error("Invoice ID not found")
         if (!subscriptionID) throw new Error("Subscription ID not found")
-
-        // get payment id from invoice
-        const invoice = await Billing.stripe().invoices.retrieve(invoiceID, {
-          expand: ["payments"],
-        })
-        const paymentID = invoice.payments?.data[0].payment.payment_intent as string
-        if (!paymentID) throw new Error("Payment ID not found")
+        if (!paymentMethodID) throw new Error("Payment method ID not found")
 
         // get payment method for the payment intent
-        const paymentIntent = await Billing.stripe().paymentIntents.retrieve(paymentID, {
-          expand: ["payment_method"],
-        })
-        const paymentMethod = paymentIntent.payment_method
-        if (!paymentMethod || typeof paymentMethod === "string") throw new Error("Payment method not expanded")
-
+        const paymentMethod = await Billing.stripe().paymentMethods.retrieve(paymentMethodID)
         await Actor.provide("system", { workspaceID }, async () => {
           // look up current billing
           const billing = await Billing.get()
@@ -165,6 +159,27 @@ export async function POST(input: APIEvent) {
               id: Identifier.create("lite"),
               userID: userID,
             })
+
+            if (userEmail) {
+              if (coupon === LiteData.firstMonth50Coupon) {
+                await Billing.redeemCoupon(userEmail, "GO1MONTH50")
+              } else if (coupon === LiteData.firstMonth100Coupon) {
+                await Billing.redeemCoupon(userEmail, "GOFREEMONTH")
+              } else if (coupon === LiteData.threeMonths100Coupon) {
+                await Billing.redeemCoupon(userEmail, "GO3MONTHS100")
+              } else if (coupon === LiteData.sixMonths100Coupon) {
+                await Billing.redeemCoupon(userEmail, "GO6MONTHS100")
+              } else if (coupon === LiteData.twelveMonths100Coupon) {
+                await Billing.redeemCoupon(userEmail, "GO12MONTHS100")
+              }
+            }
+          })
+
+          await Referral.completeFromLiteSubscription({
+            workspaceID,
+            userID,
+          }).catch((error) => {
+            console.error("Referral sync failed", error)
           })
         })
       }
@@ -180,6 +195,18 @@ export async function POST(input: APIEvent) {
         await Billing.unsubscribeBlack({ subscriptionID })
       }
     }
+    if (body.type === "customer.subscription.updated") {
+      // Black is retired: no subscription may renew, so undo any renewal made in the billing portal.
+      const subscription = body.data.object
+      if (subscription.items.data[0].price.product !== BlackData.productID()) return "ignored"
+      if (!["active", "trialing", "past_due"].includes(subscription.status)) return "ignored"
+      if (subscription.cancel_at_period_end || subscription.cancel_at) return "ignored"
+
+      await Billing.stripe().subscriptions.update(subscription.id, {
+        cancel_at_period_end: true,
+        cancellation_details: { comment: "Legacy Black retirement: renewal is not allowed" },
+      })
+    }
     if (body.type === "customer.subscription.deleted") {
       const subscriptionID = body.data.object.id
       if (!subscriptionID) throw new Error("Subscription ID not found")
@@ -189,6 +216,13 @@ export async function POST(input: APIEvent) {
         await Billing.unsubscribeLite({ subscriptionID })
       } else if (productID === BlackData.productID()) {
         await Billing.unsubscribeBlack({ subscriptionID })
+      }
+
+      const latestInvoice = body.data.object.latest_invoice
+      const invoiceID = typeof latestInvoice === "string" ? latestInvoice : latestInvoice?.id
+      if (invoiceID) {
+        const invoice = await Billing.stripe().invoices.retrieve(invoiceID)
+        if (invoice.status === "open") await Billing.stripe().invoices.voidInvoice(invoiceID)
       }
     }
     if (body.type === "invoice.payment_succeeded") {
@@ -200,26 +234,18 @@ export async function POST(input: APIEvent) {
         const amountInCents = body.data.object.amount_paid
         const customerID = body.data.object.customer as string
         const subscriptionID = body.data.object.parent?.subscription_details?.subscription as string
+        const productID = body.data.object.lines?.data[0].pricing?.price_details?.product as string
 
         if (!customerID) throw new Error("Customer ID not found")
         if (!invoiceID) throw new Error("Invoice ID not found")
         if (!subscriptionID) throw new Error("Subscription ID not found")
 
         // get coupon id from subscription
-        const subscriptionData = await Billing.stripe().subscriptions.retrieve(subscriptionID, {
-          expand: ["discounts"],
-        })
-        const couponID =
-          typeof subscriptionData.discounts[0] === "string"
-            ? subscriptionData.discounts[0]
-            : subscriptionData.discounts[0]?.coupon?.id
-        const productID = subscriptionData.items.data[0].price.product as string
-
-        // get payment id from invoice
         const invoice = await Billing.stripe().invoices.retrieve(invoiceID, {
-          expand: ["payments"],
+          expand: ["discounts", "payments"],
         })
-        const paymentID = invoice.payments?.data[0].payment.payment_intent as string
+        const paymentID = invoice.payments?.data[0]?.payment.payment_intent as string
+        const couponID = (invoice.discounts[0] as Stripe.Discount)?.coupon?.id as string
         if (!paymentID) {
           // payment id can be undefined when using coupon
           if (!couponID) throw new Error("Payment ID not found")

@@ -2,15 +2,15 @@ import { z } from "zod"
 import { fn } from "./util/fn"
 import { centsToMicroCents } from "./util/price"
 import { getWeekBounds, getMonthlyBounds } from "./util/date"
-import { Resource } from "@opencode-ai/console-resource"
+import { Resource } from "@opencode/console-resource"
 
 export namespace Subscription {
   const LimitsSchema = z.object({
     free: z.object({
       promoTokens: z.number().int(),
       dailyRequests: z.number().int(),
-      checkHeader: z.string(),
-      fallbackValue: z.number().int(),
+      dailyRequestsFallback: z.number().int(),
+      checkHeaders: z.record(z.string(), z.string()),
     }),
     lite: z.object({
       rollingLimit: z.number().int(),

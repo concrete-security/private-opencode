@@ -1,4 +1,4 @@
-import { ZenData } from "@opencode-ai/console-core/model.js"
+import { ZenData } from "@opencode/console-core/model.js"
 import {
   fromAnthropicChunk,
   fromAnthropicRequest,
@@ -33,17 +33,22 @@ export type UsageInfo = {
   cacheWrite1hTokens?: number
 }
 
-export type ProviderHelper = (input: { reqModel: string; providerModel: string; adjustCacheUsage?: boolean }) => {
+export type ProviderHelper = (input: {
+  reqModel: string
+  providerModel: string
+  adjustCacheUsage?: boolean
+  workspaceID?: string
+}) => {
   format: ZenData.Format
   modifyUrl: (providerApi: string, isStream?: boolean) => string
-  modifyHeaders: (headers: Headers, body: Record<string, any>, apiKey: string) => void
-  modifyBody: (body: Record<string, any>, workspaceID?: string) => Record<string, any>
+  modifyHeaders: (headers: Headers, apiKey: string, stickyId: string) => void
+  modifyBody: (body: Record<string, any>) => Record<string, any>
   createBinaryStreamDecoder: () => ((chunk: Uint8Array) => Uint8Array | undefined) | undefined
-  streamSeparator: string
   createUsageParser: () => {
     parse: (chunk: string) => void
     retrieve: () => any
   }
+  extractUsage: (response: any) => any
   normalizeUsage: (usage: any) => UsageInfo
 }
 

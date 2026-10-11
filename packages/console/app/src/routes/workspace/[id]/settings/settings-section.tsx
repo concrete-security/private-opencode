@@ -2,10 +2,10 @@ import { json, action, useParams, useSubmission, createAsync, query } from "@sol
 import { createEffect, Show } from "solid-js"
 import { createStore } from "solid-js/store"
 import { withActor } from "~/context/auth.withActor"
-import { Workspace } from "@opencode-ai/console-core/workspace.js"
+import { Workspace } from "@opencode/console-core/workspace.js"
 import styles from "./settings-section.module.css"
-import { Database, eq } from "@opencode-ai/console-core/drizzle/index.js"
-import { WorkspaceTable } from "@opencode-ai/console-core/schema/workspace.sql.js"
+import { Database, eq } from "@opencode/console-core/drizzle/index.js"
+import { WorkspaceTable } from "@opencode/console-core/schema/workspace.sql.js"
 import { useI18n } from "~/context/i18n"
 import { formError, localizeError } from "~/lib/form-error"
 
@@ -30,10 +30,10 @@ const getWorkspaceInfo = query(async (workspaceID: string) => {
 
 const updateWorkspace = action(async (form: FormData) => {
   "use server"
-  const name = form.get("name")?.toString().trim()
+  const name = (form.get("name") as string | null)?.trim()
   if (!name) return { error: formError.workspaceNameRequired }
   if (name.length > 255) return { error: formError.nameTooLong }
-  const workspaceID = form.get("workspaceID")?.toString()
+  const workspaceID = form.get("workspaceID") as string | null
   if (!workspaceID) return { error: formError.workspaceRequired }
   return json(
     await withActor(
@@ -43,6 +43,7 @@ const updateWorkspace = action(async (form: FormData) => {
           .catch((e) => ({ error: e.message as string })),
       workspaceID,
     ),
+    { revalidate: getWorkspaceInfo.key },
   )
 }, "workspace.update")
 

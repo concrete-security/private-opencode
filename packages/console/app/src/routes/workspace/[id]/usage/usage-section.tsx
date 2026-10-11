@@ -1,4 +1,4 @@
-import { Billing } from "@opencode-ai/console-core/billing.js"
+import { Billing } from "@opencode/console-core/billing.js"
 import { createAsync, query, useParams } from "@solidjs/router"
 import { createMemo, For, Show, Switch, Match, createEffect, createSignal } from "solid-js"
 import { formatDateUTC, formatDateForTable } from "../../common"
@@ -53,7 +53,7 @@ export function UsageSection() {
   }
 
   const calculateTotalOutputTokens = (u: Awaited<ReturnType<typeof getUsageInfo>>[0]) => {
-    return u.outputTokens + (u.reasoningTokens ?? 0)
+    return u.outputTokens
   }
 
   const goPrev = async () => {
