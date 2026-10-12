@@ -95,7 +95,7 @@ description: 管理 LLM 可以使用的工具。
 使用此工具允許 LLM 建立新檔案。如果檔案已存在，則會覆蓋現有檔案。
 
 :::note
-`write` 工具由 `edit` 權限控制，該權限涵蓋所有檔案修改操作（`edit`、`write`、`patch`、`multiedit`）。
+`write` 工具由 `edit` 權限控制，該權限涵蓋所有檔案修改操作（`edit`、`write`、`patch`）。
 :::
 
 ---
@@ -151,23 +151,6 @@ description: 管理 LLM 可以使用的工具。
 
 ---
 
-### list
-
-列出指定路徑下的檔案和目錄。
-
-```json title="opencode.json" {4}
-{
-  "$schema": "https://opencode.ai/config.json",
-  "permission": {
-    "list": "allow"
-  }
-}
-```
-
-該工具用於列出目錄內容。它接受 glob 模式來過濾結果。
-
----
-
 ### lsp（實驗性）
 
 與已設定的 LSP 伺服器互動，取得程式碼智慧功能，如定義跳轉、參考查找、懸停資訊和呼叫階層結構。
@@ -207,7 +190,7 @@ description: 管理 LLM 可以使用的工具。
 該工具將補丁檔案套用到您的程式碼庫中。適用於套用來自各種來源的 diff 和補丁。
 
 :::note
-`patch` 工具由 `edit` 權限控制，該權限涵蓋所有檔案修改操作（`edit`、`write`、`patch`、`multiedit`）。
+`patch` 工具由 `edit` 權限控制，該權限涵蓋所有檔案修改操作（`edit`、`write`、`patch`）。
 :::
 
 ---
@@ -224,27 +207,6 @@ description: 管理 LLM 可以使用的工具。
   }
 }
 ```
-
----
-
-### todowrite
-
-在編碼工作階段中管理待辦事項清單。
-
-```json title="opencode.json" {4}
-{
-  "$schema": "https://opencode.ai/config.json",
-  "permission": {
-    "todowrite": "allow"
-  }
-}
-```
-
-建立和更新任務清單以追蹤複雜操作的進度。LLM 使用此工具來組織多步驟任務。
-
-:::note
-該工具預設對子代理停用，但您可以手動啟用。[了解更多](/docs/agents/#permissions)
-:::
 
 ---
 
@@ -341,7 +303,7 @@ MCP（Model Context Protocol）伺服器允許您整合外部工具和服務，�
 
 ## 內部機制
 
-在內部，`grep`、`glob` 和 `list` 等工具底層使用 [ripgrep](https://github.com/BurntSushi/ripgrep)。預設情況下，ripgrep 遵循 `.gitignore` 中的模式，這意味著 `.gitignore` 中列出的檔案和目錄將被排除在搜尋和列表結果之外。
+在內部，`grep` 和 `glob` 等工具底層使用 [ripgrep](https://github.com/BurntSushi/ripgrep)。預設情況下，ripgrep 遵循 `.gitignore` 中的模式，這意味著 `.gitignore` 中列出的檔案和目錄將被排除在搜尋和列表結果之外。
 
 ---
 
