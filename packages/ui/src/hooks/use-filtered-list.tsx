@@ -12,6 +12,7 @@ export interface FilteredListProps<T> {
   groupBy?: (x: T) => string
   sortBy?: (a: T, b: T) => number
   sortGroupsBy?: (a: { category: string; items: T[] }, b: { category: string; items: T[] }) => number
+  skipFilter?: (item: T) => boolean
   onSelect?: (value: T | undefined, index: number) => void
   noInitialSelection?: boolean
 }
@@ -20,6 +21,7 @@ export function useFilteredList<T>(props: FilteredListProps<T>) {
   const [store, setStore] = createStore<{ filter: string }>({ filter: "" })
 
   type Group = { category: string; items: [T, ...T[]] }
+
   const empty: Group[] = []
 
   const [grouped, { refetch }] = createResource(
@@ -31,20 +33,28 @@ export function useFilteredList<T>(props: FilteredListProps<T>) {
       const query = filter ?? ""
       const needle = query.toLowerCase()
       const all = (await Promise.resolve(items)) || []
+
       const result = pipe(
         all,
         (x) => {
           if (!needle) return x
-          if (!props.filterKeys && Array.isArray(x) && x.every((e) => typeof e === "string")) {
-            return fuzzysort.go(needle, x).map((x) => x.target) as T[]
-          }
-          return fuzzysort.go(needle, x, { keys: props.filterKeys! }).map((x) => x.obj)
+          const skipFilter = props.skipFilter
+          const filterable = skipFilter ? x.filter((item) => !skipFilter(item)) : x
+          const skipped = skipFilter ? x.filter(skipFilter) : []
+
+          const filtered =
+            !props.filterKeys && Array.isArray(filterable) && filterable.every((e) => typeof e === "string")
+              ? (fuzzysort.go(needle, filterable).map((x) => x.target) as T[])
+              : fuzzysort.go(needle, filterable, { keys: props.filterKeys! }).map((x) => x.obj)
+
+          return skipped.length ? [...filtered, ...skipped] : filtered
         },
         groupBy((x) => (props.groupBy ? props.groupBy(x) : "")),
         entries(),
         map(([k, v]) => ({ category: k, items: props.sortBy ? v.sort(props.sortBy) : v })),
         (groups) => (props.sortGroupsBy ? groups.sort(props.sortGroupsBy) : groups),
       )
+
       return result
     },
     { initialValue: empty },
@@ -59,10 +69,13 @@ export function useFilteredList<T>(props: FilteredListProps<T>) {
 
   function initialActive() {
     if (props.noInitialSelection) return ""
+
     if (props.current) return props.key(props.current)
 
     const items = flat()
+
     if (items.length === 0) return ""
+
     return props.key(items[0])
   }
 
@@ -75,9 +88,12 @@ export function useFilteredList<T>(props: FilteredListProps<T>) {
   const reset = () => {
     if (props.noInitialSelection) {
       list.setActive("")
+
       return
     }
+
     const all = flat()
+
     if (all.length === 0) return
     list.setActive(props.key(all[0]))
   }
@@ -87,14 +103,17 @@ export function useFilteredList<T>(props: FilteredListProps<T>) {
       event.preventDefault()
       const selectedIndex = flat().findIndex((x) => props.key(x) === list.active())
       const selected = flat()[selectedIndex]
+
       if (selected) props.onSelect?.(selected, selectedIndex)
     } else if (event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey) {
       if (event.key === "n" || event.key === "p") {
         event.preventDefault()
+
         const navEvent = new KeyboardEvent("keydown", {
           key: event.key === "n" ? "ArrowDown" : "ArrowUp",
           bubbles: true,
         })
+
         list.onKeyDown(navEvent)
       }
     } else {
