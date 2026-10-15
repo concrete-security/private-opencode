@@ -51,7 +51,7 @@ OpenCode ใช้ [AI SDK](https://ai-sdk.dev/) และ [Models.dev](https://
 ## OpenCode Zen
 
 OpenCode Zen คือรายชื่อโมเดลที่จัดทำโดยทีมงาน OpenCode ที่ได้รับ
-ทดสอบและตรวจสอบแล้วว่าทำงานได้ดีกับ OpenCode [เรียนรู้เพิ่มเติม](/docs/zen)
+ทดสอบและตรวจสอบแล้วว่าทำงานได้ดีกับ OpenCode [เรียนรู้เพิ่มเติม](https://opencode.ai/v2/docs/console/)
 
 :::tip
 หากคุณยังใหม่ เราขอแนะนำให้เริ่มต้นด้วย OpenCode Zen
@@ -321,6 +321,44 @@ OpenCode Go คือแผนการสมัครสมาชิกรา�
 
 ---
 
+### Atomic Chat
+
+คุณสามารถกำหนดค่า opencode ให้ใช้โมเดลท้องถิ่นผ่าน [Atomic Chat](https://atomic.chat) ซึ่งเป็นแอปพลิเคชันเดสก์ท็อปที่เรียกใช้ LLM ในเครื่องภายใต้เซิร์ฟเวอร์ API ที่เข้ากันได้กับ OpenAI (ปลายทางเริ่มต้น `http://127.0.0.1:1337/v1`)
+
+```json title="opencode.json" "atomic-chat" {5, 6, 8, 10-14}
+{
+  "$schema": "https://opencode.ai/config.json",
+  "provider": {
+    "atomic-chat": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "Atomic Chat (local)",
+      "options": {
+        "baseURL": "http://127.0.0.1:1337/v1"
+      },
+      "models": {
+        "<your-model-id>": {
+          "name": "<your-model-name>"
+        }
+      }
+    }
+  }
+}
+```
+
+ในตัวอย่างนี้:
+
+- `atomic-chat` คือรหัสผู้ให้บริการที่กำหนดเอง สามารถเป็นสตริงใดก็ได้ที่คุณต้องการ
+- `npm` ระบุแพ็กเกจที่จะใช้สำหรับผู้ให้บริการนี้ ที่นี่ใช้ `@ai-sdk/openai-compatible` สำหรับ API ใดๆ ที่เข้ากันได้กับ OpenAI
+- `name` คือชื่อแสดงของผู้ให้บริการในอินเทอร์เฟซ
+- `options.baseURL` คือปลายทางของเซิร์ฟเวอร์ท้องถิ่น เปลี่ยนโฮสต์และพอร์ตให้ตรงกับการตั้งค่า Atomic Chat ของคุณ
+- `models` คือแผนที่ระหว่างรหัสโมเดลกับชื่อแสดง แต่ละรหัสต้องตรงกับ `id` ที่ส่งคืนโดย `GET /v1/models` — รัน `curl http://127.0.0.1:1337/v1/models` เพื่อแสดงรายการรหัสที่โหลดอยู่ใน Atomic Chat
+
+:::tip
+หากการเรียกเครื่องมือทำงานได้ไม่ดี ให้เลือกโมเดลที่โหลดแล้วซึ่งรองรับ tool calling ได้ดี (ตัวอย่างเช่น รุ่น Qwen-Coder หรือ DeepSeek-Coder)
+:::
+
+---
+
 ### Azure OpenAI
 
 :::note
@@ -577,7 +615,7 @@ Cloudflare AI Gateway ช่วยให้คุณเข้าถึงโม�
    └ enter
    ```
 
-4. รันคำสั่ง `/models` เพื่อเลือกโมเดล DeepSeek เช่น _DeepSeek Reasoner_
+4. รันคำสั่ง `/models` เพื่อเลือกโมเดล DeepSeek เช่น _DeepSeek V4 Pro_
 
    ```txt
    /models
@@ -612,17 +650,17 @@ Cloudflare AI Gateway ช่วยให้คุณเข้าถึงโม�
 
 ---
 
-### Firmware
+### FrogBot
 
-1. ไปที่ [แดชบอร์ด Firmware](https://app.firmware.ai/signup) สร้างบัญชี และสร้างคีย์ API
+1. ไปที่ [แดชบอร์ด FrogBot](https://app.frogbot.ai/signup) สร้างบัญชี และสร้างคีย์ API
 
-2. เรียกใช้คำสั่ง `/connect` และค้นหา **Firmware**
+2. เรียกใช้คำสั่ง `/connect` และค้นหา **FrogBot**
 
    ```txt
    /connect
    ```
 
-3. ป้อนคีย์ Firmware API ของคุณ
+3. ป้อนคีย์ FrogBot API ของคุณ
 
    ```txt
    ┌ API key
@@ -1362,7 +1400,7 @@ Ollama สามารถกำหนดค่าตัวเองสำหร�
 
 ### OpenCode Zen
 
-OpenCode Zen คือรายการโมเดลที่ได้รับการทดสอบและตรวจสอบแล้วโดยทีมงาน OpenCode [เรียนรู้เพิ่มเติม](/docs/zen)
+OpenCode Zen คือรายการโมเดลที่ได้รับการทดสอบและตรวจสอบแล้วโดยทีมงาน OpenCode [เรียนรู้เพิ่มเติม](https://opencode.ai/v2/docs/console/)
 
 1. ลงชื่อเข้าใช้ **<a href={console}>OpenCode Zen</a>** และคลิก **สร้าง API คีย์**
 
