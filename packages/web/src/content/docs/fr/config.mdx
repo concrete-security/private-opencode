@@ -357,27 +357,6 @@ Ce paramètre s'applique à toutes les interfaces : TUI, CLI (`opencode run`), a
 
 ---
 
-### Partage
-
-Vous pouvez configurer la fonctionnalité [share](/docs/share) via l'option `share`.
-
-```json title="opencode.json"
-{
-  "$schema": "https://opencode.ai/config.json",
-  "share": "manual"
-}
-```
-
-Elle accepte :
-
-- `"manual"` – Autoriser le partage manuel via des commandes (par défaut)
-- `"auto"` – Partager automatiquement de nouvelles conversations
-- `"disabled"` – Désactiver complètement le partage
-
-Par défaut, le partage est défini en mode manuel où vous devez partager explicitement les conversations à l'aide de la commande `/share`.
-
----
-
 ### Commandes
 
 Vous pouvez configurer des commandes personnalisées pour les tâches répétitives via l'option `command`.
@@ -490,14 +469,14 @@ Vous pouvez contrôler le comportement de compactage du contexte via l'option `c
   "$schema": "https://opencode.ai/config.json",
   "compaction": {
     "auto": true,
-    "prune": true,
+    "prune": false,
     "reserved": 10000
   }
 }
 ```
 
 - `auto` - Compacte automatiquement la session lorsque le contexte est plein (par défaut : `true`).
-- `prune` - Supprimez les anciennes sorties de l'outil pour économiser des tokens (par défaut : `true`).
+- `prune` - Supprimez les anciennes sorties de l'outil pour économiser des tokens (par défaut : `false`).
 - `reserved` - Tampon de jetons pour le compactage. Laisse suffisamment de marge pour éviter le débordement lors du compactage.
 
 ---
