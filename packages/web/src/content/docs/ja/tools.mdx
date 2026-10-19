@@ -18,7 +18,7 @@ description: LLM が使用できるツールを管理します。
   "$schema": "https://opencode.ai/config.json",
   "permission": {
     "edit": "deny",
-    "bash": "ask",
+    "shell": "ask",
     "webfetch": "allow"
   }
 }
@@ -45,7 +45,7 @@ OpenCode で利用可能なすべての組み込みツールを次に示しま�
 
 ---
 
-### bash
+### shell
 
 プロジェクト環境でシェルコマンドを実行します。
 
@@ -53,7 +53,7 @@ OpenCode で利用可能なすべての組み込みツールを次に示しま�
 {
   "$schema": "https://opencode.ai/config.json",
   "permission": {
-    "bash": "allow"
+    "shell": "allow"
   }
 }
 ```
@@ -95,7 +95,7 @@ OpenCode で利用可能なすべての組み込みツールを次に示しま�
 これを使用して、LLM が新しいファイルを作成できるようにします。既存のファイルがすでに存在する場合は上書きされます。
 
 :::note
-`write` ツールは、すべてのファイル変更 (`edit`、`edit`、`write`、`patch`) をカバーする `multiedit` 権限によって制御されます。
+`write` ツールは、すべてのファイル変更 (`edit`、`write`、`patch`) をカバーする `edit` 権限によって制御されます。
 :::
 
 ---
@@ -151,23 +151,6 @@ OpenCode で利用可能なすべての組み込みツールを次に示しま�
 
 ---
 
-### list
-
-指定されたパス内のファイルとディレクトリを一覧表示します。
-
-```json title="opencode.json" {4}
-{
-  "$schema": "https://opencode.ai/config.json",
-  "permission": {
-    "list": "allow"
-  }
-}
-```
-
-このツールはディレクトリの内容を一覧表示します。結果をフィルタリングするための glob パターンを受け入れます。
-
----
-
 ### lsp (実験的)
 
 構成された LSP サーバーと対話して、定義、参照、ホバー情報、呼び出し階層などのコードインテリジェンス機能を取得します。
@@ -207,7 +190,7 @@ OpenCode で利用可能なすべての組み込みツールを次に示しま�
 このツールは、コードベースにパッチファイルを適用します。さまざまなソースからの差分やパッチを適用するのに役立ちます。
 
 :::note
-`patch` ツールは、すべてのファイル変更 (`edit`、`edit`、`write`、`patch`) をカバーする `multiedit` 権限によって制御されます。
+`patch` ツールは、すべてのファイル変更 (`edit`、`write`、`patch`) をカバーする `edit` 権限によって制御されます。
 :::
 
 ---
@@ -224,27 +207,6 @@ OpenCode で利用可能なすべての組み込みツールを次に示しま�
   }
 }
 ```
-
----
-
-### todowrite
-
-コーディングセッション中に ToDo リストを管理します。
-
-```json title="opencode.json" {4}
-{
-  "$schema": "https://opencode.ai/config.json",
-  "permission": {
-    "todowrite": "allow"
-  }
-}
-```
-
-タスクリストを作成および更新して、複雑な操作中の進行状況を追跡します。 LLM はこれを使用して、複数ステップのタスクを整理します。
-
-:::note
-このツールはデフォルトではサブエージェントに対して無効になっていますが、手動で有効にすることができます。 [詳細はこちら](/docs/agents/#permissions)
-:::
 
 ---
 
@@ -341,7 +303,7 @@ MCP (Model Context Protocol) サーバーを使用すると、外部ツールと
 
 ## 内部動作
 
-内部的には、`grep`、`glob`、`list` などのツールは内部で [ripgrep](https://github.com/BurntSushi/ripgrep) を使用します。デフォルトでは、ripgrep は `.gitignore` パターンを尊重します。つまり、`.gitignore` にリストされているファイルとディレクトリは検索とリストから除外されます。
+内部的には、`grep`、`glob` などのツールは内部で [ripgrep](https://github.com/BurntSushi/ripgrep) を使用します。デフォルトでは、ripgrep は `.gitignore` パターンを尊重します。つまり、`.gitignore` にリストされているファイルとディレクトリは検索とリストから除外されます。
 
 ---
 

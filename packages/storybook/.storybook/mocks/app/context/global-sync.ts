@@ -1,5 +1,3 @@
-import { createStore } from "solid-js/store"
-
 const provider = {
   all: [
     {
@@ -17,26 +15,15 @@ const provider = {
   default: { anthropic: "claude-3-7-sonnet" },
 }
 
-const [store, setStore] = createStore({
-  todo: {} as Record<string, any[]>,
-  provider,
-  session: [] as any[],
-  config: { permission: {} },
-})
-
-export function useGlobalSync() {
+export function useQueryOptions() {
   return {
-    data: {
-      provider,
-      session_todo: store.todo,
-    },
-    child() {
-      return [store, setStore] as const
-    },
-    todo: {
-      set(sessionID: string, todos: any[]) {
-        setStore("todo", sessionID, todos)
-      },
-    },
+    agents: (directory: string) => ({
+      queryKey: [directory, "agents"],
+      queryFn: async () => [],
+    }),
+    providers: (directory: string | null) => ({
+      queryKey: [directory, "providers"],
+      queryFn: async () => provider,
+    }),
   }
 }

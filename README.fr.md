@@ -10,7 +10,7 @@
 <p align="center">L'agent de codage IA open source.</p>
 <p align="center">
   <a href="https://opencode.ai/discord"><img alt="Discord" src="https://img.shields.io/discord/1391832426048651334?style=flat-square&label=discord" /></a>
-  <a href="https://www.npmjs.com/package/opencode-ai"><img alt="npm" src="https://img.shields.io/npm/v/opencode-ai?style=flat-square" /></a>
+  <a href="https://www.npmjs.com/package/@opencode/cli"><img alt="npm" src="https://img.shields.io/npm/v/@opencode/cli?style=flat-square" /></a>
   <a href="https://github.com/anomalyco/opencode/actions/workflows/publish.yml"><img alt="Build status" src="https://img.shields.io/github/actions/workflow/status/anomalyco/opencode/publish.yml?style=flat-square&branch=dev" /></a>
 </p>
 
@@ -47,18 +47,16 @@
 
 ```bash
 # YOLO
-curl -fsSL https://opencode.ai/install | bash
+curl -fsSL https://opencode.ai/v2/install | bash
 
 # Gestionnaires de paquets
-npm i -g opencode-ai@latest        # ou bun/pnpm/yarn
-scoop install opencode             # Windows
-choco install opencode             # Windows
-brew install anomalyco/tap/opencode # macOS et Linux (recommandé, toujours à jour)
+npm i -g @opencode/cli@latest      # ou bun/pnpm/yarn
+brew install anomalyco/tap/opencode-v2 # macOS et Linux (recommandé, toujours à jour)
 brew install opencode              # macOS et Linux (formule officielle brew, mise à jour moins fréquente)
 sudo pacman -S opencode            # Arch Linux (Stable)
-paru -S opencode-bin               # Arch Linux (Latest from AUR)
+paru -S opencode-beta              # Arch Linux (Latest from AUR)
 mise use -g opencode               # n'importe quel OS
-nix run nixpkgs#opencode           # ou github:anomalyco/opencode pour la branche dev la plus récente
+nix run github:anomalyco/opencode  # Nix
 ```
 
 > [!TIP]
@@ -66,20 +64,18 @@ nix run nixpkgs#opencode           # ou github:anomalyco/opencode pour la branch
 
 ### Application de bureau (BETA)
 
-OpenCode est aussi disponible en application de bureau. Téléchargez-la directement depuis la [page des releases](https://github.com/anomalyco/opencode/releases) ou [opencode.ai/download](https://opencode.ai/download).
+OpenCode est aussi disponible en application de bureau. Téléchargez-la depuis [opencode.ai/download](https://opencode.ai/download).
 
-| Plateforme            | Téléchargement                        |
-| --------------------- | ------------------------------------- |
-| macOS (Apple Silicon) | `opencode-desktop-darwin-aarch64.dmg` |
-| macOS (Intel)         | `opencode-desktop-darwin-x64.dmg`     |
-| Windows               | `opencode-desktop-windows-x64.exe`    |
-| Linux                 | `.deb`, `.rpm`, ou AppImage           |
+| Plateforme            | Téléchargement                     |
+| --------------------- | ---------------------------------- |
+| macOS (Apple Silicon) | `opencode-desktop-mac-arm64.dmg`   |
+| macOS (Intel)         | `opencode-desktop-mac-x64.dmg`     |
+| Windows               | `opencode-desktop-win-x64.exe`     |
+| Linux                 | `.deb`, `.rpm`, ou AppImage        |
 
 ```bash
 # macOS (Homebrew)
 brew install --cask opencode-desktop
-# Windows (Scoop)
-scoop bucket add extras; scoop install extras/opencode-desktop
 ```
 
 #### Répertoire d'installation
@@ -93,8 +89,8 @@ Le script d'installation respecte l'ordre de priorité suivant pour le chemin d'
 
 ```bash
 # Exemples
-OPENCODE_INSTALL_DIR=/usr/local/bin curl -fsSL https://opencode.ai/install | bash
-XDG_BIN_DIR=$HOME/.local/bin curl -fsSL https://opencode.ai/install | bash
+OPENCODE_INSTALL_DIR=/usr/local/bin curl -fsSL https://opencode.ai/v2/install | bash
+XDG_BIN_DIR=$HOME/.local/bin curl -fsSL https://opencode.ai/v2/install | bash
 ```
 
 ### Agents
@@ -123,18 +119,6 @@ Si vous souhaitez contribuer à OpenCode, lisez nos [docs de contribution](./CON
 ### Construire avec OpenCode
 
 Si vous travaillez sur un projet lié à OpenCode et que vous utilisez "opencode" dans le nom du projet (par exemple, "opencode-dashboard" ou "opencode-mobile"), ajoutez une note dans votre README pour préciser qu'il n'est pas construit par l'équipe OpenCode et qu'il n'est pas affilié à nous.
-
-### FAQ
-
-#### En quoi est-ce différent de Claude Code ?
-
-C'est très similaire à Claude Code en termes de capacités. Voici les principales différences :
-
-- 100% open source
-- Pas couplé à un fournisseur. Nous recommandons les modèles proposés via [OpenCode Zen](https://opencode.ai/zen) ; OpenCode peut être utilisé avec Claude, OpenAI, Google ou même des modèles locaux. Au fur et à mesure que les modèles évoluent, les écarts se réduiront et les prix baisseront, donc être agnostique au fournisseur est important.
-- Support LSP prêt à l'emploi
-- Un focus sur la TUI. OpenCode est construit par des utilisateurs de neovim et les créateurs de [terminal.shop](https://terminal.shop) ; nous allons repousser les limites de ce qui est possible dans le terminal.
-- Architecture client/serveur. Cela permet par exemple de faire tourner OpenCode sur votre ordinateur tout en le pilotant à distance depuis une application mobile. Cela signifie que la TUI n'est qu'un des clients possibles.
 
 ---
 
