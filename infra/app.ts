@@ -13,9 +13,6 @@ const bucket = new sst.cloudflare.Bucket("Bucket")
 export const api = new sst.cloudflare.Worker("Api", {
   domain: `api.${domain}`,
   handler: "packages/function/src/api.ts",
-  environment: {
-    WEB_DOMAIN: domain,
-  },
   url: true,
   link: [
     bucket,
@@ -30,6 +27,7 @@ export const api = new sst.cloudflare.Worker("Api", {
   transform: {
     worker: (args) => {
       args.logpush = true
+      if ($app.stage === "vimtor" || $app.stage === "adam") return
       args.bindings = $resolve(args.bindings).apply((bindings) => [
         ...bindings,
         {
@@ -55,14 +53,5 @@ new sst.cloudflare.x.Astro("Web", {
     // For astro config
     SST_STAGE: $app.stage,
     VITE_API_URL: api.url.apply((url) => url!),
-  },
-})
-
-new sst.cloudflare.StaticSite("WebApp", {
-  domain: "app." + domain,
-  path: "packages/app",
-  build: {
-    command: "bun turbo build",
-    output: "./dist",
   },
 })
