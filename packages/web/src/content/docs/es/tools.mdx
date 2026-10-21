@@ -18,7 +18,7 @@ Utilice el campo `permission` para controlar el comportamiento de la herramienta
   "$schema": "https://opencode.ai/config.json",
   "permission": {
     "edit": "deny",
-    "bash": "ask",
+    "shell": "ask",
     "webfetch": "allow"
   }
 }
@@ -45,7 +45,7 @@ Aquí están todas las herramientas integradas disponibles en OpenCode.
 
 ---
 
-### bash
+### shell
 
 Ejecute comandos de shell en el entorno de su proyecto.
 
@@ -53,7 +53,7 @@ Ejecute comandos de shell en el entorno de su proyecto.
 {
   "$schema": "https://opencode.ai/config.json",
   "permission": {
-    "bash": "allow"
+    "shell": "allow"
   }
 }
 ```
@@ -95,7 +95,7 @@ Cree nuevos archivos o sobrescriba los existentes.
 Utilice esto para permitir que LLM cree nuevos archivos. Sobrescribirá los archivos existentes si ya existen.
 
 :::note
-La herramienta `write` está controlada por el permiso `edit`, que cubre todas las modificaciones de archivos (`edit`, `write`, `patch`, `multiedit`).
+La herramienta `write` está controlada por el permiso `edit`, que cubre todas las modificaciones de archivos (`edit`, `write`, `patch`).
 :::
 
 ---
@@ -151,23 +151,6 @@ Busque archivos usando patrones globales como `**/*.js` o `src/**/*.ts`. Devuelv
 
 ---
 
-### list
-
-Enumere archivos y directorios en una ruta determinada.
-
-```json title="opencode.json" {4}
-{
-  "$schema": "https://opencode.ai/config.json",
-  "permission": {
-    "list": "allow"
-  }
-}
-```
-
-Esta herramienta enumera el contenido del directorio. Acepta patrones globales para filtrar resultados.
-
----
-
 ### lsp (experimental)
 
 Interactúe con sus servidores LSP configurados para obtener funciones de inteligencia de código como definiciones, referencias, información de desplazamiento y jerarquía de llamadas.
@@ -207,7 +190,7 @@ Aplicar parches a los archivos.
 Esta herramienta aplica archivos de parche a su código base. Útil para aplicar diferencias y parches de diversas fuentes.
 
 :::note
-La herramienta `patch` está controlada por el permiso `edit`, que cubre todas las modificaciones de archivos (`edit`, `write`, `patch`, `multiedit`).
+La herramienta `patch` está controlada por el permiso `edit`, que cubre todas las modificaciones de archivos (`edit`, `write`, `patch`).
 :::
 
 ---
@@ -224,27 +207,6 @@ Cargue una [habilidad](/docs/skills) (un archivo `SKILL.md`) y devuelva su conte
   }
 }
 ```
-
----
-
-### todowrite
-
-Administre listas de tareas pendientes durante las sesiones de codificación.
-
-```json title="opencode.json" {4}
-{
-  "$schema": "https://opencode.ai/config.json",
-  "permission": {
-    "todowrite": "allow"
-  }
-}
-```
-
-Crea y actualiza listas de tareas para realizar un seguimiento del progreso durante operaciones complejas. El LLM usa esto para organizar tareas de varios pasos.
-
-:::note
-Esta herramienta está deshabilitada para los subagentes de forma predeterminada, pero puede habilitarla manualmente. [Más información](/docs/agents/#permissions)
-:::
 
 ---
 
@@ -341,7 +303,7 @@ Los servidores MCP (Model Context Protocol) le permiten integrar herramientas y 
 
 ## Internos
 
-Internamente, herramientas como `grep`, `glob` y `list` usan [ripgrep](https://github.com/BurntSushi/ripgrep) bajo el capó. De forma predeterminada, ripgrep respeta los patrones `.gitignore`, lo que significa que los archivos y directorios enumerados en su `.gitignore` se excluirán de las búsquedas y listados.
+Internamente, herramientas como `grep` y `glob` usan [ripgrep](https://github.com/BurntSushi/ripgrep) bajo el capó. De forma predeterminada, ripgrep respeta los patrones `.gitignore`, lo que significa que los archivos y directorios enumerados en su `.gitignore` se excluirán de las búsquedas y listados.
 
 ---
 
