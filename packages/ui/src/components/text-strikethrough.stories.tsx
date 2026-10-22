@@ -1,11 +1,14 @@
 // @ts-nocheck
-import { createEffect, createSignal, onCleanup, onMount } from "solid-js"
+import { createSignal, onMount } from "solid-js"
+import { createResizeObserver } from "@solid-primitives/resize-observer"
 import { createStore } from "solid-js/store"
 import { useSpring } from "./motion-spring"
 import { TextStrikethrough } from "./text-strikethrough"
 
 const TEXT_SHORT = "Remove inline measure nodes"
+
 const TEXT_MED = "Remove inline measure nodes and keep width morph behavior intact"
+
 const TEXT_LONG =
   "Refactor ToolStatusTitle DOM measurement to offscreen global measurer (unconstrained by timeline layout)"
 
@@ -43,6 +46,7 @@ function VariantA(props: { active: boolean; text: string }) {
     () => (props.active ? 1 : 0),
     () => ({ visualDuration: 0.35, bounce: 0 }),
   )
+
   return (
     <span
       style={{
@@ -76,6 +80,7 @@ function VariantD(props: { active: boolean; text: string }) {
     () => (props.active ? 1 : 0),
     () => ({ visualDuration: 0.35, bounce: 0 }),
   )
+
   return (
     <span
       style={{
@@ -99,6 +104,7 @@ function VariantE(props: { active: boolean; text: string }) {
     () => (props.active ? 1 : 0),
     () => ({ visualDuration: 0.35, bounce: 0 }),
   )
+
   return (
     <span
       style={{
@@ -129,35 +135,35 @@ function VariantF(props: { active: boolean; text: string }) {
     () => (props.active ? 1 : 0),
     () => ({ visualDuration: 0.35, bounce: 0 }),
   )
+
   let baseRef: HTMLSpanElement | undefined
   let containerRef: HTMLSpanElement | undefined
+
   const [state, setState] = createStore({
     textWidth: 0,
     containerWidth: 0,
   })
+
   const textWidth = () => state.textWidth
   const containerWidth = () => state.containerWidth
 
   const measure = () => {
     if (baseRef) setState("textWidth", baseRef.scrollWidth)
+
     if (containerRef) setState("containerWidth", containerRef.offsetWidth)
   }
 
   onMount(measure)
-  createEffect(() => {
-    const el = containerRef
-    if (!el) return
-    const observer = new ResizeObserver(measure)
-    observer.observe(el)
-    onCleanup(() => observer.disconnect())
-  })
+  createResizeObserver(() => containerRef, measure)
 
   const clipRight = () => {
     const cw = containerWidth()
     const tw = textWidth()
+
     if (cw <= 0 || tw <= 0) return `${(1 - progress()) * 100}%`
     const revealed = progress() * tw
     const remaining = Math.max(0, cw - revealed)
+
     return `${remaining}px`
   }
 
