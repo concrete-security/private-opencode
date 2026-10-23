@@ -51,7 +51,7 @@ config.
 ## OpenCode Zen
 
 OpenCode Zen は、OpenCode チームが提供するモデルのリストです。
-OpenCode で適切に動作することがテストおよび検証されています。 [詳細はこちら](/docs/zen)。
+OpenCode で適切に動作することがテストおよび検証されています。 [詳細はこちら](https://opencode.ai/v2/docs/console/)。
 
 :::tip
 初めての方は、OpenCode Zen から始めることをお勧めします。
@@ -329,6 +329,44 @@ Pro/Max サブスクリプションをお持ちでない場合は、[**API キ�
 
 ---
 
+### Atomic Chat
+
+opencode は、OpenAI 互換の API サーバーの背後でローカル LLM を実行するデスクトップアプリケーション [Atomic Chat](https://atomic.chat) 経由でローカルモデルを使うように設定できます（デフォルトのエンドポイントは `http://127.0.0.1:1337/v1`）。
+
+```json title="opencode.json" "atomic-chat" {5, 6, 8, 10-14}
+{
+  "$schema": "https://opencode.ai/config.json",
+  "provider": {
+    "atomic-chat": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "Atomic Chat (local)",
+      "options": {
+        "baseURL": "http://127.0.0.1:1337/v1"
+      },
+      "models": {
+        "<your-model-id>": {
+          "name": "<your-model-name>"
+        }
+      }
+    }
+  }
+}
+```
+
+この例では:
+
+- `atomic-chat` はカスタムプロバイダー ID です。任意の文字列を指定できます。
+- `npm` はこのプロバイダーに使用するパッケージを指定します。ここでは、任意の OpenAI 互換 API に対して `@ai-sdk/openai-compatible` を使用しています。
+- `name` は UI に表示されるプロバイダー名です。
+- `options.baseURL` はローカルサーバーのエンドポイントです。Atomic Chat のセットアップに合わせてホストとポートを変更してください。
+- `models` はモデル ID と表示名のマップです。各 ID は `GET /v1/models` が返す `id` と一致する必要があります。Atomic Chat に現在ロードされている ID の一覧は `curl http://127.0.0.1:1337/v1/models` を実行して確認できます。
+
+:::tip
+ツール呼び出しがうまく動作しない場合は、ツール呼び出しに強いロード済みモデル（例えば Qwen-Coder や DeepSeek-Coder のバリアント）を選択してください。
+:::
+
+---
+
 ### Azure OpenAI
 
 :::note
@@ -529,7 +567,7 @@ OpenCode 設定を通じてモデルを追加することもできます。
   "provider": {
     "cloudflare-ai-gateway": {
       "models": {
-        "openai/gpt-4o": {},
+        "openai/gpt-6.1-sol": {},
         "anthropic/claude-sonnet-4": {}
       }
     }
@@ -585,7 +623,7 @@ OpenCode 設定を通じてモデルを追加することもできます。
    └ enter
    ```
 
-4. `/models` コマンドを実行して、_DeepSeek Reasoner_ のような DeepSeek モデルを選択します。
+4. `/models` コマンドを実行して、_DeepSeek V4 Pro_ のような DeepSeek モデルを選択します。
 
    ```txt
    /models
@@ -620,9 +658,9 @@ OpenCode 設定を通じてモデルを追加することもできます。
 
 ---
 
-### Firmware
+### FrogBot
 
-1. [ファームウェアダッシュボード](https://app.firmware.ai/signup) に移動し、アカウントを作成し、API キーを生成します。
+1. [ファームウェアダッシュボード](https://app.frogbot.ai/signup) に移動し、アカウントを作成し、API キーを生成します。
 
 2. `/connect` コマンドを実行し、**ファームウェア**を検索します。
 
@@ -712,39 +750,6 @@ GitLab Duo は、GitLab の Anthropic プロキシを介したネイティブツ
 /models
 ```
 
----
-
-### STACKIT
-
-STACKIT AI Model Serving は、Llama、Mistral、Qwen などの LLM に焦点を当て、ヨーロッパのインフラストラクチャでの最大限のデータ主権を備えた、AI モデル用の完全に管理された主権ホスティング環境を提供します。
-
-1. [STACKIT Portal](https://portal.stackit.cloud) に移動し、**AI Model Serving** に移動して、プロジェクトの認証トークンを作成します。
-
-   :::tip
-   認証トークンを作成する前に、STACKIT 顧客アカウント、ユーザーアカウント、およびプロジェクトが必要です。
-   :::
-
-2. `/connect` コマンドを実行し、**STACKIT** を検索します。
-
-   ```txt
-   /connect
-   ```
-
-3. STACKIT AI Model Serving 認証トークンを入力します。
-
-   ```txt
-   ┌ API key
-   │
-   │
-   └ enter
-   ```
-
-4. `/models` コマンドを実行して、_Qwen3-VL 235B_ や _Llama 3.3 70B_ などの利用可能なモデルから選択します。
-
-   ```txt
-   /models
-   ```
-
 3 つの Claude ベースのモデルが利用可能です。
 
 - **duo-chat-haiku-4-5** (デフォルト) - 素早いタスクに対する素早い応答
@@ -762,12 +767,11 @@ STACKIT AI Model Serving は、Llama、Mistral、Qwen などの LLM に焦点を
 OpenCode は、セッションタイトルの生成などの一部の AI タスクに小規模なモデルを使用します。
 デフォルトでは、Zen によってホストされる gpt-5-nano を使用するように構成されています。 OpenCode をロックするには
 自分の GitLab でホストされているインスタンスのみを使用するには、次の行を
-`opencode.json` ファイル。セッション共有を無効にすることもお勧めします。
+`opencode.json` ファイル。
 
 ```json
 {
-  "small_model": "gitlab/duo-chat-haiku-4-5",
-  "share": "disabled"
+  "small_model": "gitlab/duo-chat-haiku-4-5"
 }
 ```
 
@@ -858,8 +862,7 @@ GitLab ツール (マージリクエスト、問題、パイプライン、CI/CD
 GitHub Copilot サブスクリプションを OpenCode で使用するには:
 
 :::note
-一部のモデルでは [Pro+] が必要になる場合があります。
-subscription](https://github.com/features/copilot/plans) を使用します。
+一部のモデルでは [Pro+ subscription](https://github.com/features/copilot/plans) が必要になる場合があります。
 
 一部のモデルは、[GitHub Copilot settings](https://docs.github.com/en/copilot/how-tos/use-ai-models/configure-access-to-ai-models#setup-for-individual-use) で構成する必要があります。
 :::
@@ -1404,7 +1407,7 @@ OpenCode で Ollama Cloud を使用するには:
 
 ### OpenCode Zen
 
-OpenCode Zen は、OpenCode チームによって提供される、テストおよび検証されたモデルのリストです。 [詳細はこちら](/docs/zen)。
+OpenCode Zen は、OpenCode チームによって提供される、テストおよび検証されたモデルのリストです。 [詳細はこちら](https://opencode.ai/v2/docs/console/)。
 
 1. **<a href={console}>OpenCode Zen</a>** にサインインし、**API キーの作成** をクリックします。
 
@@ -1543,6 +1546,39 @@ SAP AI コアは、統合プラットフォームを通じて、OpenAI、Anthrop
 :::
 
 5. `/models` コマンドを実行して、40 以上の利用可能なモデルから選択します。
+
+   ```txt
+   /models
+   ```
+
+---
+
+### STACKIT
+
+STACKIT AI Model Serving は、Llama、Mistral、Qwen などの LLM に焦点を当て、ヨーロッパのインフラストラクチャでの最大限のデータ主権を備えた、AI モデル用の完全に管理された主権ホスティング環境を提供します。
+
+1. [STACKIT Portal](https://portal.stackit.cloud) に移動し、**AI Model Serving** に移動して、プロジェクトの認証トークンを作成します。
+
+   :::tip
+   認証トークンを作成する前に、STACKIT 顧客アカウント、ユーザーアカウント、およびプロジェクトが必要です。
+   :::
+
+2. `/connect` コマンドを実行し、**STACKIT** を検索します。
+
+   ```txt
+   /connect
+   ```
+
+3. STACKIT AI Model Serving 認証トークンを入力します。
+
+   ```txt
+   ┌ API key
+   │
+   │
+   └ enter
+   ```
+
+4. `/models` コマンドを実行して、_Qwen3-VL 235B_ や _Llama 3.3 70B_ などの利用可能なモデルから選択します。
 
    ```txt
    /models
