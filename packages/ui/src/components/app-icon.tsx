@@ -46,7 +46,9 @@ const themed: Partial<Record<IconName, { light: string; dark: string }>> = {
 
 const scheme = () => {
   if (typeof document !== "object") return "light" as const
+
   if (document.documentElement.dataset.colorScheme === "dark") return "dark" as const
+
   return "light" as const
 }
 
@@ -77,7 +79,7 @@ export const AppIcon: Component<AppIconProps> = (props) => {
       alt={local.alt ?? ""}
       draggable={local.draggable ?? false}
       classList={{
-        ...(local.classList ?? {}),
+        ...local.classList,
         [local.class ?? ""]: !!local.class,
       }}
     />
