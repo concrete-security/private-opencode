@@ -8,6 +8,8 @@ export type {
   ResolvedTheme,
   ColorValue,
   CssVarRef,
+  V2ColorValue,
+  ResolvedV2Theme,
 } from "./types"
 
 export {
@@ -30,7 +32,11 @@ export {
 } from "./color"
 
 export { resolveThemeVariant, resolveTheme, themeToCss } from "./resolve"
+
+export { resolveThemeVariantV2, resolveThemeV2, themeV2ToCss, generateV2Primitives } from "./v2/resolve"
+
 export { applyTheme, loadThemeFromUrl, getActiveTheme, removeTheme, setColorScheme } from "./loader"
+
 export { ThemeProvider, useTheme, type ColorScheme } from "./context"
 
 export {
@@ -60,7 +66,6 @@ export {
   nordTheme,
   oneDarkTheme,
   oneDarkProTheme,
-  opencodeTheme,
   orngTheme,
   osakaJadeTheme,
   palenightTheme,
