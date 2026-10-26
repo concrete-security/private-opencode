@@ -35,13 +35,13 @@ OpenCode 內建了兩個主代理：**Build** 和 **Plan**。我們將在下面�
 
 子代理是主代理可以呼叫來執行特定任務的專業助手。您也可以透過在訊息中 **@ 提及**它們來手動呼叫。
 
-OpenCode 內建了兩個子代理：**General** 和 **Explore**。我們將在下面介紹它們。
+OpenCode 內建了三個子代理：**General**、**Explore** 和 **Scout**。我們將在下面介紹它們。
 
 ---
 
 ## 內建代理
 
-OpenCode 內建了兩個主代理和兩個子代理。
+OpenCode 內建了兩個主代理和三個子代理。
 
 ---
 
@@ -71,7 +71,7 @@ _模式_：`primary`
 
 _模式_：`subagent`
 
-一個用於研究複雜問題和執行多步驟任務的通用代理。擁有完整的工具存取權限（todo 除外），因此可以在需要時修改檔案。可用於並行執行多個工作單元。
+一個用於研究複雜問題和執行多步驟任務的通用代理。擁有完整的工具存取權限，因此可以在需要時修改檔案。可用於並行執行多個工作單元。
 
 ---
 
@@ -80,6 +80,14 @@ _模式_：`subagent`
 _模式_：`subagent`
 
 一個用於探索程式碼庫的快速唯讀代理。無法修改檔案。當您需要按模式快速查找檔案、搜尋程式碼中的關鍵字或回答有關程式碼庫的問題時，請使用此代理。
+
+---
+
+### 使用 Scout
+
+_模式_：`subagent`
+
+一個用於外部文件與依賴研究的唯讀代理。當您需要將某個依賴儲存庫 clone 到 OpenCode 的託管快取中、檢查函式庫的原始碼，或在不修改工作區的情況下將本機程式碼與 upstream 實作交叉比對時，請使用此代理。
 
 ---
 
@@ -143,7 +151,7 @@ _模式_：`primary`
   "agent": {
     "build": {
       "mode": "primary",
-      "model": "anthropic/claude-sonnet-4-20250514",
+      "model": "anthropic/claude-sonnet-5-5",
       "prompt": "{file:./prompts/build.txt}",
       "tools": {
         "write": true,
@@ -163,7 +171,7 @@ _模式_：`primary`
     "code-reviewer": {
       "description": "Reviews code for best practices and potential issues",
       "mode": "subagent",
-      "model": "anthropic/claude-sonnet-4-20250514",
+      "model": "anthropic/claude-sonnet-5-5",
       "prompt": "You are a code reviewer. Focus on security, performance, and maintainability.",
       "tools": {
         "write": false,
@@ -187,7 +195,7 @@ _模式_：`primary`
 ---
 description: Reviews code for quality and best practices
 mode: subagent
-model: anthropic/claude-sonnet-4-20250514
+model: anthropic/claude-sonnet-5-5
 temperature: 0.1
 tools:
   write: false
@@ -358,7 +366,7 @@ Markdown 檔案名稱即為代理名稱。例如，`review.md` 會建立一個�
 }
 ```
 
-OpenCode 設定中的模型 ID 使用 `provider/model-id` 格式。例如，如果您使用 [OpenCode Zen](/docs/zen)，則可以使用 `opencode/gpt-5.1-codex` 來表示 GPT 5.1 Codex。
+OpenCode 設定中的模型 ID 使用 `provider/model-id` 格式。例如，如果您使用 [OpenCode Zen](https://opencode.ai/v2/docs/console/)，則可以使用 `opencode/gpt-6.1-sol` 來表示 GPT-6.1 Sol。
 
 ---
 
@@ -645,7 +653,7 @@ Only analyze code and suggest changes.
   "agent": {
     "deep-thinker": {
       "description": "Agent that uses high reasoning effort for complex problems",
-      "model": "openai/gpt-5",
+      "model": "openai/gpt-6.1-sol",
       "reasoningEffort": "high",
       "textVerbosity": "low"
     }
@@ -663,19 +671,9 @@ Only analyze code and suggest changes.
 
 ## 建立代理
 
-您可以使用以下命令建立新代理：
+要建立新代理，請將 Markdown 檔案新增到專案的 `.opencode/agents/` 或全域的 `~/.config/opencode/agents/` 中。檔案名稱即為代理名稱，frontmatter 用於設定其描述、模式、模型和權限。檔案格式請參閱上文的 [Markdown](#markdown)。
 
-```bash
-opencode agent create
-```
-
-此互動式命令將：
-
-1. 詢問代理的儲存位置——全域或專案級。
-2. 描述代理應該做什麼。
-3. 產生合適的系統提示詞和識別碼。
-4. 讓您選擇代理可以存取哪些工具。
-5. 最後，建立一個包含代理設定的 Markdown 檔案。
+執行 `opencode agent list` 可列出 OpenCode 已載入的代理。
 
 ---
 
