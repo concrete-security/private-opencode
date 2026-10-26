@@ -106,7 +106,7 @@ jobs:
     runs-on: ubuntu-24.04
 =======
   models-catalog:
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
 >>>>>>> upstream/dev
     if: github.repository == 'anomalyco/opencode'
@@ -128,7 +128,7 @@ jobs:
     needs:
       - version
       - models-catalog
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     # Beta builds only the CLIs its desktop app bundles, in build-cli-beta.
     if: github.repository == 'anomalyco/opencode' && github.ref_name != 'beta'
@@ -206,7 +206,7 @@ jobs:
     needs:
       - version
       - models-catalog
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     if: github.repository == 'anomalyco/opencode' && github.ref_name == 'beta'
     env:
@@ -312,7 +312,7 @@ jobs:
 
   build-node-app-archive:
     needs: version
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     if: github.repository == 'anomalyco/opencode' && github.ref_name != 'beta' && !(github.ref_name == 'dev' && (inputs.bump || inputs.version))
     steps:
@@ -343,16 +343,16 @@ jobs:
       matrix:
         settings:
           - target: linux-arm64
-            host: blacksmith-4vcpu-ubuntu-2404-arm
+            host: ubuntu-24.04
           - target: linux-x64
-            host: blacksmith-4vcpu-ubuntu-2404
+            host: ubuntu-24.04
           - target: darwin-arm64
             host: macos-26
           - target: windows-arm64
-            host: blacksmith-4vcpu-windows-2025
+            host: windows-latest
             bun_install_flags: --cpu=*
           - target: windows-x64
-            host: blacksmith-4vcpu-windows-2025
+            host: windows-latest
     runs-on: ${{ matrix.settings.host }}
     env:
       OPENCODE_MODELS_SNAPSHOT: ${{ github.workspace }}/.cache/models-catalog/api.json
@@ -411,7 +411,7 @@ jobs:
     if: github.repository == 'anomalyco/opencode'
 =======
       - sign-cli-macos
-    runs-on: blacksmith-4vcpu-windows-2025
+    runs-on: windows-latest
     if: github.repository == 'anomalyco/opencode' && github.ref_name == 'dev'
 >>>>>>> upstream/dev
     env:
@@ -957,7 +957,7 @@ jobs:
     runs-on: ubuntu-24.04
 =======
     if: always() && !failure() && !cancelled()
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ubuntu-24.04
     # Versioned and beta releases wait for approval in the release environment; dev previews do not.
     environment: ${{ needs.version.outputs.release && 'release' || '' }}
     env:
@@ -1098,7 +1098,7 @@ jobs:
       - version
       - publish
     if: ${{ !cancelled() && github.repository == 'anomalyco/opencode' && github.ref_name == 'dev' && needs.version.outputs.release && needs.publish.result == 'success' }}
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ubuntu-24.04
     environment: release
     steps:
       # Unlike dev, V2 publishes a tag rather than a GitHub Release event.
