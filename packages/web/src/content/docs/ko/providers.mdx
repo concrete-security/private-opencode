@@ -49,7 +49,7 @@ OpenCode 설정의 `provider` 섹션을 통해 공급자를 사용자 정의할 
 
 ## OpenCode Zen
 
-OpenCode Zen은 OpenCode 팀이 OpenCode와 잘 작동하도록 테스트하고 검증한 모델 목록입니다. [더 알아보기](/docs/zen).
+OpenCode Zen은 OpenCode 팀이 OpenCode와 잘 작동하도록 테스트하고 검증한 모델 목록입니다. [더 알아보기](https://opencode.ai/v2/docs/console/).
 
 :::tip
 처음이라면 OpenCode Zen으로 시작하는 것이 좋습니다.
@@ -325,6 +325,44 @@ Pro/Max 구독이 없는 경우 **Create an API Key**를 선택할 수 있습니
 
 ---
 
+### Atomic Chat
+
+OpenAI 호환 API 서버 뒤에서 로컬 LLM을 실행하는 데스크톱 애플리케이션인 [Atomic Chat](https://atomic.chat)을 통해 로컬 모델을 사용하도록 opencode를 구성할 수 있습니다(기본 엔드포인트 `http://127.0.0.1:1337/v1`).
+
+```json title="opencode.json" "atomic-chat" {5, 6, 8, 10-14}
+{
+  "$schema": "https://opencode.ai/config.json",
+  "provider": {
+    "atomic-chat": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "Atomic Chat (local)",
+      "options": {
+        "baseURL": "http://127.0.0.1:1337/v1"
+      },
+      "models": {
+        "<your-model-id>": {
+          "name": "<your-model-name>"
+        }
+      }
+    }
+  }
+}
+```
+
+이 예시에서:
+
+- `atomic-chat`은 사용자 지정 공급자 ID입니다. 원하는 어떤 문자열이든 사용할 수 있습니다.
+- `npm`은 이 공급자에 사용할 패키지를 지정합니다. 여기서는 모든 OpenAI 호환 API에 `@ai-sdk/openai-compatible`이 사용됩니다.
+- `name`은 UI에 표시되는 공급자의 이름입니다.
+- `options.baseURL`은 로컬 서버의 엔드포인트입니다. Atomic Chat 설정에 맞게 호스트와 포트를 변경하세요.
+- `models`는 모델 ID와 해당 표시 이름의 맵입니다. 각 ID는 `GET /v1/models`가 반환하는 `id`와 일치해야 하며, 현재 Atomic Chat에 로드된 ID 목록을 확인하려면 `curl http://127.0.0.1:1337/v1/models`를 실행하세요.
+
+:::tip
+도구 호출이 잘 작동하지 않는 경우, 도구 호출을 잘 지원하는 로드된 모델(예: Qwen-Coder 또는 DeepSeek-Coder 변형)을 선택하세요.
+:::
+
+---
+
 ### Azure OpenAI
 
 :::note
@@ -525,7 +563,7 @@ Cloudflare AI Gateway는 OpenAI, Anthropic, Workers AI 등의 모델에 액세�
      "provider": {
        "cloudflare-ai-gateway": {
          "models": {
-           "openai/gpt-4o": {},
+           "openai/gpt-6.1-sol": {},
            "anthropic/claude-sonnet-4": {}
          }
        }
@@ -581,7 +619,7 @@ Cloudflare AI Gateway는 OpenAI, Anthropic, Workers AI 등의 모델에 액세�
    └ enter
    ```
 
-4. `/models` 명령을 실행하여 DeepSeek 모델(예: _DeepSeek Reasoner_)을 선택하십시오.
+4. `/models` 명령을 실행하여 DeepSeek 모델(예: _DeepSeek V4 Pro_)을 선택하십시오.
 
    ```txt
    /models
@@ -616,17 +654,17 @@ Cloudflare AI Gateway는 OpenAI, Anthropic, Workers AI 등의 모델에 액세�
 
 ---
 
-### Firmware
+### FrogBot
 
-1. [Firmware 대시보드](https://app.firmware.ai/signup)로 이동하여 계정을 만들고 API 키를 생성합니다.
+1. [FrogBot 대시보드](https://app.frogbot.ai/signup)로 이동하여 계정을 만들고 API 키를 생성합니다.
 
-2. `/connect` 명령을 실행하고 **Firmware**를 검색하십시오.
+2. `/connect` 명령을 실행하고 **FrogBot**를 검색하십시오.
 
    ```txt
    /connect
    ```
 
-3. Firmware API 키를 입력하십시오.
+3. FrogBot API 키를 입력하십시오.
 
    ```txt
    ┌ API key
@@ -722,13 +760,11 @@ GitLab Duo는 GitLab의 Anthropic 프록시를 통해 기본 도구 호출 기�
 OpenCode는 세션 제목 생성과 같은 일부 AI 작업을 위해 작은 모델을 사용합니다.
 기본적으로 Zen에서 호스팅되는 gpt-5-nano를 사용하도록 구성됩니다.
 OpenCode를 자체 호스팅 GitLab 인스턴스만 사용하도록 제한하려면 `opencode.json` 파일에 다음을 추가하십시오.
-세션 공유를 비활성화하는 것도 권장합니다.
 
 ```json
 {
   "$schema": "https://opencode.ai/config.json",
-  "small_model": "gitlab/duo-chat-haiku-4-5",
-  "share": "disabled"
+  "small_model": "gitlab/duo-chat-haiku-4-5"
 }
 ```
 
@@ -1359,7 +1395,7 @@ OpenCode로 Ollama Cloud를 사용하려면:
 
 ### OpenCode Zen
 
-OpenCode Zen은 OpenCode 팀에서 제공하는 테스트 및 검증된 모델 목록입니다. [더 알아보기](/docs/zen).
+OpenCode Zen은 OpenCode 팀에서 제공하는 테스트 및 검증된 모델 목록입니다. [더 알아보기](https://opencode.ai/v2/docs/console/).
 
 1. **<a href={console}>OpenCode Zen</a>**에 로그인하고 **Create API Key**를 클릭합니다.
 
