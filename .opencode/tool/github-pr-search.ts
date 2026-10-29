@@ -1,5 +1,5 @@
 /// <reference path="../env.d.ts" />
-import { tool } from "@opencode-ai/plugin"
+import { tool } from "@opencode/plugin"
 async function githubFetch(endpoint: string, options: RequestInit = {}) {
   const response = await fetch(`https://api.github.com${endpoint}`, {
     ...options,
@@ -7,7 +7,7 @@ async function githubFetch(endpoint: string, options: RequestInit = {}) {
       Authorization: `Bearer ${process.env.GITHUB_TOKEN}`,
       Accept: "application/vnd.github+json",
       "Content-Type": "application/json",
-      ...options.headers,
+      ...(options.headers instanceof Headers ? Object.fromEntries(options.headers.entries()) : options.headers),
     },
   })
   if (!response.ok) {
