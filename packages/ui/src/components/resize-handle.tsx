@@ -8,6 +8,8 @@ export interface ResizeHandleProps extends Omit<JSX.HTMLAttributes<HTMLDivElemen
   max: number
   onResize: (size: number) => void
   onCollapse?: () => void
+  /** Called while dragging when size crosses `collapseThreshold`. */
+  onCollapseChange?: (collapsed: boolean) => void
   collapseThreshold?: number
 }
 
@@ -20,46 +22,77 @@ export function ResizeHandle(props: ResizeHandleProps) {
     "max",
     "onResize",
     "onCollapse",
+    "onCollapseChange",
     "collapseThreshold",
     "class",
     "classList",
   ])
 
   const handleMouseDown = (e: MouseEvent) => {
+    if (e.detail > 1) return
     e.preventDefault()
+    const handle = e.currentTarget instanceof HTMLElement ? e.currentTarget : undefined
     const edge = local.edge ?? (local.direction === "vertical" ? "start" : "end")
     const start = local.direction === "horizontal" ? e.clientX : e.clientY
+
+    const rtl =
+      local.direction === "horizontal" &&
+      e.currentTarget instanceof Element &&
+      getComputedStyle(e.currentTarget).direction === "rtl"
+
     const startSize = local.size
+    const min = local.min
+    const max = local.max
+    const threshold = local.collapseThreshold ?? 0
+    const onResize = local.onResize
+    const onCollapse = local.onCollapse
+    const onCollapseChange = local.onCollapseChange
     let current = startSize
+    let collapsed = false
 
     document.body.style.userSelect = "none"
     document.body.style.overflow = "hidden"
+    document.body.style.cursor = local.direction === "horizontal" ? "col-resize" : "row-resize"
+    handle?.setAttribute("data-dragging", "")
 
     const onMouseMove = (moveEvent: MouseEvent) => {
       const pos = local.direction === "horizontal" ? moveEvent.clientX : moveEvent.clientY
+
       const delta =
         local.direction === "vertical"
           ? edge === "end"
             ? pos - start
             : start - pos
-          : edge === "start"
+          : (edge === "start") !== rtl
             ? start - pos
             : pos - start
+
       current = startSize + delta
-      const clamped = Math.min(local.max, Math.max(local.min, current))
-      local.onResize(clamped)
+      const nextCollapsed = threshold > 0 && current < threshold
+
+      if (nextCollapsed !== collapsed) {
+        collapsed = nextCollapsed
+        onCollapseChange?.(collapsed)
+      }
+
+      onResize(Math.min(max, Math.max(min, current)))
     }
 
     const onMouseUp = () => {
       document.body.style.userSelect = ""
       document.body.style.overflow = ""
+      document.body.style.cursor = ""
+      handle?.removeAttribute("data-dragging")
       document.removeEventListener("mousemove", onMouseMove)
       document.removeEventListener("mouseup", onMouseUp)
 
-      const threshold = local.collapseThreshold ?? 0
-      if (local.onCollapse && threshold > 0 && current < threshold) {
-        local.onCollapse()
+      if (collapsed) {
+        onCollapse?.()
+
+        return
       }
+
+      onCollapseChange?.(false)
     }
 
     document.addEventListener("mousemove", onMouseMove)
@@ -73,7 +106,7 @@ export function ResizeHandle(props: ResizeHandleProps) {
       data-direction={local.direction}
       data-edge={local.edge ?? (local.direction === "vertical" ? "start" : "end")}
       classList={{
-        ...(local.classList ?? {}),
+        ...local.classList,
         [local.class ?? ""]: !!local.class,
       }}
       onMouseDown={handleMouseDown}

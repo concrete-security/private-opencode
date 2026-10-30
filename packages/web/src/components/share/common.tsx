@@ -1,6 +1,6 @@
-import { createContext, createSignal, onCleanup, splitProps, useContext } from "solid-js"
+import { createContext, createSignal, useContext } from "solid-js"
 import type { JSX } from "solid-js/jsx-runtime"
-import { IconCheckCircle, IconHashtag } from "../icons"
+import { makeResizeObserver } from "@solid-primitives/resize-observer"
 
 export type ShareMessages = { locale: string } & Record<string, string>
 
@@ -40,42 +40,6 @@ export function formatCount(value: number, locale: string, singular: string, plu
   return `${formatNumber(value, locale)} ${unit}`
 }
 
-interface AnchorProps extends JSX.HTMLAttributes<HTMLDivElement> {
-  id: string
-}
-export function AnchorIcon(props: AnchorProps) {
-  const [local, rest] = splitProps(props, ["id", "children"])
-  const [copied, setCopied] = createSignal(false)
-  const messages = useShareMessages()
-
-  return (
-    <div {...rest} data-element-anchor title={messages.link_to_message} data-status={copied() ? "copied" : ""}>
-      <a
-        href={`#${local.id}`}
-        onClick={(e) => {
-          e.preventDefault()
-
-          const anchor = e.currentTarget
-          const hash = anchor.getAttribute("href") || ""
-          const { origin, pathname, search } = window.location
-
-          navigator.clipboard
-            .writeText(`${origin}${pathname}${search}${hash}`)
-            .catch((err) => console.error("Copy failed", err))
-
-          setCopied(true)
-          setTimeout(() => setCopied(false), 3000)
-        }}
-      >
-        {local.children}
-        <IconHashtag width={18} height={18} />
-        <IconCheckCircle width={18} height={18} />
-      </a>
-      <span data-element-tooltip>{messages.copied}</span>
-    </div>
-  )
-}
-
 export function createOverflow() {
   const [overflow, setOverflow] = createSignal(false)
   return {
@@ -83,17 +47,14 @@ export function createOverflow() {
       return overflow()
     },
     ref(el: HTMLElement) {
-      const ro = new ResizeObserver(() => {
-        if (el.scrollHeight > el.clientHeight + 1) {
-          setOverflow(true)
-        }
-        return
-      })
-      ro.observe(el)
+      const sync = () => {
+        setOverflow(el.scrollHeight > el.clientHeight + 1)
+      }
 
-      onCleanup(() => {
-        ro.disconnect()
-      })
+      const obs = makeResizeObserver(sync)
+      obs.observe(el)
+
+      sync()
     },
   }
 }
