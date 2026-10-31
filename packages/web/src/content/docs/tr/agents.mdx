@@ -35,13 +35,13 @@ opencode, **Build** ve **Plan** olmak üzere iki yerleşik birincil agent ile bi
 
 Alt agent'lar, birincil agent'ların belirli görevler için çağırabileceği uzman yardımcılardır. Ayrıca mesajlarınızda **@ bahsederek** bunları manuel olarak da çağırabilirsiniz.
 
-opencode, **General** ve **Explore** olmak üzere iki yerleşik alt agent ile birlikte gelir. Buna aşağıda bakacağız.
+OpenCode, **General**, **Explore** ve **Scout** olmak üzere üç yerleşik alt agent ile birlikte gelir. Buna aşağıda bakacağız.
 
 ---
 
 ## Yerleşik
 
-opencode iki yerleşik birincil agent ve iki yerleşik alt agent ile birlikte gelir.
+OpenCode iki yerleşik birincil agent ve üç yerleşik alt agent ile birlikte gelir.
 
 ---
 
@@ -80,6 +80,14 @@ Karmaşık soruları araştırmak ve çok adımlı görevleri yürütmek için g
 _Mod_: `subagent`
 
 Kod tabanlarını keşfetmeye yönelik hızlı, salt okunur bir agent. Dosyalar değiştirilemiyor. Dosyaları kalıplara göre hızla bulmanız, anahtar sözcükler için kod aramanız veya kod tabanıyla ilgili soruları yanıtlamanız gerektiğinde bunu kullanın.
+
+---
+
+### Scout Kullanımı
+
+_Mod_: `subagent`
+
+Harici dokümanlar ve bağımlılık araştırmaları için salt okunur bir agent. Bir bağımlılık repository'sini OpenCode'un yönetilen cache'ine clone etmeniz, kütüphane kaynak kodunu incelemeniz veya workspace'inizi değiştirmeden yerel kodu upstream implementasyonlarla karşılaştırmanız gerektiğinde bunu kullanın.
 
 ---
 
@@ -143,7 +151,7 @@ Agent'ları `opencode.json` yapılandırma dosyanızda yapılandırın:
   "agent": {
     "build": {
       "mode": "primary",
-      "model": "anthropic/claude-sonnet-4-20250514",
+      "model": "anthropic/claude-sonnet-5-5",
       "prompt": "{file:./prompts/build.txt}",
       "tools": {
         "write": true,
@@ -163,7 +171,7 @@ Agent'ları `opencode.json` yapılandırma dosyanızda yapılandırın:
     "code-reviewer": {
       "description": "Reviews code for best practices and potential issues",
       "mode": "subagent",
-      "model": "anthropic/claude-sonnet-4-20250514",
+      "model": "anthropic/claude-sonnet-5-5",
       "prompt": "You are a code reviewer. Focus on security, performance, and maintainability.",
       "tools": {
         "write": false,
@@ -187,7 +195,7 @@ Ayrıca agent'ları Markdown dosyalarını kullanarak da tanımlayabilirsiniz. B
 ---
 description: Reviews code for quality and best practices
 mode: subagent
-model: anthropic/claude-sonnet-4-20250514
+model: anthropic/claude-sonnet-5-5
 temperature: 0.1
 tools:
   write: false
@@ -358,7 +366,7 @@ Bir model belirtmezseniz, birincil agent'lar [küresel olarak yapılandırılmı
 }
 ```
 
-opencode yapılandırmanızdaki model kimliği `provider/model-id` biçimini kullanır. Örneğin, [OpenCode Zen](/docs/zen) kullanıyorsanız, GPT 5.1 Codex için `opencode/gpt-5.1-codex` kullanırsınız.
+opencode yapılandırmanızdaki model kimliği `provider/model-id` biçimini kullanır. Örneğin, [OpenCode Zen](https://opencode.ai/v2/docs/console/) kullanıyorsanız, GPT-6.1 Sol için `opencode/gpt-6.1-sol` kullanırsınız.
 
 ---
 
@@ -645,7 +653,7 @@ Agent yapılandırmanızdaki diğer seçenekler, model seçenekleri olarak **do�
   "agent": {
     "deep-thinker": {
       "description": "Agent that uses high reasoning effort for complex problems",
-      "model": "openai/gpt-5",
+      "model": "openai/gpt-6.1-sol",
       "reasoningEffort": "high",
       "textVerbosity": "low"
     }
@@ -663,19 +671,9 @@ Mevcut modellerin listesini görmek için `opencode models` komutunu çalıştı
 
 ## Agent Oluşturma
 
-Aşağıdaki komutu kullanarak yeni agent'lar oluşturabilirsiniz:
+Yeni bir agent oluşturmak için proje düzeyinde `.opencode/agents/` dizinine veya global olarak `~/.config/opencode/agents/` dizinine bir Markdown dosyası ekleyin. Dosya adı agent'ın adı olur; frontmatter ise açıklamasını, modunu, modelini ve izinlerini yapılandırır. Dosya biçimi için yukarıdaki [Markdown](#markdown) bölümüne bakın.
 
-```bash
-opencode agent create
-```
-
-Bu etkileşimli komut şunları sağlayacaktır:
-
-1. Agent'ı nereye kaydedeceğinizi sorar; küresel veya projeye özel.
-2. Agent'ın ne yapması gerektiğinin açıklamasını ister.
-3. Uygun bir sistem prompt'u ve tanımlayıcı oluşturur.
-4. Agent'ın hangi araçlara erişebileceğini seçmenize izin verir.
-5. Son olarak agent yapılandırmasıyla bir Markdown dosyası oluşturur.
+OpenCode'un yüklediği agent'ları listelemek için `opencode agent list` komutunu çalıştırın.
 
 ---
 
