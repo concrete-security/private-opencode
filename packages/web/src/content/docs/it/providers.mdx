@@ -48,13 +48,15 @@ Puoi personalizzare l'URL base per qualsiasi provider impostando l'opzione `base
 
 ---
 
-## OpenCode Zen
+<a id="opencode-zen"></a>
 
-OpenCode Zen e una lista di modelli forniti dal team OpenCode, testati e
-verificati per funzionare bene con OpenCode. [Scopri di piu](/docs/zen).
+## OpenCode Models
+
+OpenCode Models e una lista di modelli forniti dal team OpenCode, testati e
+verificati per funzionare bene con OpenCode. [Scopri di piu](https://opencode.ai/v2/docs/console/).
 
 :::tip
-Se sei all'inizio, ti consigliamo di partire da OpenCode Zen.
+Se sei all'inizio, ti consigliamo di partire da OpenCode Models.
 :::
 
 1. Esegui `/connect` nella TUI, seleziona opencode e vai su [opencode.ai/auth](https://opencode.ai/auth).
@@ -299,6 +301,44 @@ Oppure se hai già una chiave API, puoi selezionare **Manually enter API Key** e
 
 ---
 
+### Atomic Chat
+
+Puoi configurare opencode per utilizzare modelli locali tramite [Atomic Chat](https://atomic.chat), un'applicazione desktop che esegue LLM locali dietro un server API compatibile OpenAI (endpoint predefinito `http://127.0.0.1:1337/v1`).
+
+```json title="opencode.json" "atomic-chat" {5, 6, 8, 10-14}
+{
+  "$schema": "https://opencode.ai/config.json",
+  "provider": {
+    "atomic-chat": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "Atomic Chat (local)",
+      "options": {
+        "baseURL": "http://127.0.0.1:1337/v1"
+      },
+      "models": {
+        "<your-model-id>": {
+          "name": "<your-model-name>"
+        }
+      }
+    }
+  }
+}
+```
+
+In questo esempio:
+
+- `atomic-chat` è l'ID personalizzato del provider. Può essere qualsiasi stringa.
+- `npm` specifica il pacchetto da utilizzare per questo provider. Qui viene usato `@ai-sdk/openai-compatible` per qualsiasi API compatibile OpenAI.
+- `name` è il nome visualizzato del provider nell'interfaccia.
+- `options.baseURL` è l'endpoint del server locale. Modifica host e porta in base alla tua configurazione Atomic Chat.
+- `models` è una mappa di ID modello ai rispettivi nomi visualizzati. Ogni ID deve corrispondere all'`id` restituito da `GET /v1/models` — esegui `curl http://127.0.0.1:1337/v1/models` per elencare gli ID attualmente caricati in Atomic Chat.
+
+:::tip
+Se le chiamate agli strumenti non funzionano bene, scegli un modello caricato con buon supporto per il tool calling (ad esempio, una variante Qwen-Coder o DeepSeek-Coder).
+:::
+
+---
+
 ### Azure OpenAI
 
 :::note
@@ -499,7 +539,7 @@ Cloudflare AI Gateway ti permette di accedere a modelli di OpenAI, Anthropic, Wo
      "provider": {
        "cloudflare-ai-gateway": {
          "models": {
-           "openai/gpt-4o": {},
+           "openai/gpt-6.1-sol": {},
            "anthropic/claude-sonnet-4": {}
          }
        }
@@ -555,7 +595,7 @@ Cloudflare AI Gateway ti permette di accedere a modelli di OpenAI, Anthropic, Wo
    └ enter
    ```
 
-4. Esegui il comando `/models` per selezionare un modello DeepSeek come _DeepSeek Reasoner_.
+4. Esegui il comando `/models` per selezionare un modello DeepSeek come _DeepSeek V4 Pro_.
 
    ```txt
    /models
@@ -590,17 +630,17 @@ Cloudflare AI Gateway ti permette di accedere a modelli di OpenAI, Anthropic, Wo
 
 ---
 
-### Firmware
+### FrogBot
 
-1. Vai alla [dashboard di Firmware](https://app.firmware.ai/signup), crea un account e genera una chiave API.
+1. Vai alla [dashboard di FrogBot](https://app.frogbot.ai/signup), crea un account e genera una chiave API.
 
-2. Esegui il comando `/connect` e cerca **Firmware**.
+2. Esegui il comando `/connect` e cerca **FrogBot**.
 
    ```txt
    /connect
    ```
 
-3. Inserisci la tua chiave API di Firmware.
+3. Inserisci la tua chiave API di FrogBot.
 
    ```txt
    ┌ API key
@@ -695,15 +735,14 @@ salvare il token nello storage di auth di opencode.
 
 :::note[nota di compliance]
 OpenCode usa un modello piccolo per alcuni task AI come generare il titolo della sessione.
-È configurato per usare gpt-5-nano di default, ospitato da Zen. Per bloccare OpenCode
+È configurato per usare gpt-5-nano di default, ospitato da OpenCode. Per bloccare OpenCode
 a usare solo la tua istanza GitLab self-hosted, aggiungi quanto segue al tuo
-file `opencode.json`. Si raccomanda anche di disabilitare la condivisione sessioni.
+file `opencode.json`.
 
 ```json
 {
   "$schema": "https://opencode.ai/config.json",
-  "small_model": "gitlab/duo-chat-haiku-4-5",
-  "share": "disabled"
+  "small_model": "gitlab/duo-chat-haiku-4-5"
 }
 ```
 
@@ -1336,13 +1375,15 @@ Se hai già una chiave API, puoi selezionare **Manually enter API Key** e incoll
 
 ---
 
-### OpenCode Zen
+<a id="opencode-zen-1"></a>
 
-OpenCode Zen è una lista di modelli testati e verificati forniti dal team OpenCode. [Scopri di più](/docs/zen).
+### OpenCode Models
 
-1. Accedi a **<a href={console}>OpenCode Zen</a>** e clicca **Create API Key**.
+OpenCode Models è una lista di modelli testati e verificati forniti dal team OpenCode. [Scopri di più](https://opencode.ai/v2/docs/console/).
 
-2. Esegui il comando `/connect` e cerca **OpenCode Zen**.
+1. Accedi a **<a href={console}>OpenCode Console</a>** e clicca **Create API Key**.
+
+2. Esegui il comando `/connect` e cerca **OpenCode**.
 
    ```txt
    /connect
