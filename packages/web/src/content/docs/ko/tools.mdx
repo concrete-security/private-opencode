@@ -95,7 +95,7 @@ description: LLM이 사용할 수 있는 도구를 관리합니다.
 LLM을 사용하여 새 파일을 만듭니다. 이미 존재하는 경우 기존 파일을 덮어쓰겠습니다.
 
 :::note
-`write` 공구는 모든 파일 수정 (`edit`, `write`, `patch`, `multiedit`)를 포함하는 `edit` 허가에 의해 통제됩니다.
+`write` 공구는 모든 파일 수정 (`edit`, `write`, `patch`)를 포함하는 `edit` 허가에 의해 통제됩니다.
 :::
 
 ---
@@ -151,23 +151,6 @@ Codebase에서 빠른 콘텐츠 검색. 전체 regex 문법 및 파일 패턴 �
 
 ---
 
-### list
-
-주어진 경로의 파일 및 디렉토리 목록.
-
-```json title="opencode.json" {4}
-{
-  "$schema": "https://opencode.ai/config.json",
-  "permission": {
-    "list": "allow"
-  }
-}
-```
-
-이 도구는 디렉토리 내용을 나열합니다. 그것은 glob 패턴을 필터 결과에 받아들입니다.
-
----
-
 ### lsp (실험적)
 
 정의, 참고, hover info 및 호출 hierarchy와 같은 코드 인텔리전스 기능을 얻기 위해 구성 된 LSP 서버와 인터랙트.
@@ -207,7 +190,7 @@ LSP 서버가 프로젝트에 사용할 수 있는 구성하려면 [LSP Servers]
 이 도구는 코드베이스에 패치 파일을 적용합니다. 다양한 소스에서 diffs 및 Patch를 적용하는 데 유용합니다.
 
 :::note
-`patch` 공구는 모든 파일 수정 (`edit`, `write`, `patch`, `multiedit`)를 포함하는 `edit` 허가에 의해 통제됩니다.
+`patch` 공구는 모든 파일 수정 (`edit`, `write`, `patch`)를 포함하는 `edit` 허가에 의해 통제됩니다.
 :::
 
 ---
@@ -224,27 +207,6 @@ LSP 서버가 프로젝트에 사용할 수 있는 구성하려면 [LSP Servers]
   }
 }
 ```
-
----
-
-## todowrite
-
-코딩 세션 중에 todo 목록을 관리합니다.
-
-```json title="opencode.json" {4}
-{
-  "$schema": "https://opencode.ai/config.json",
-  "permission": {
-    "todowrite": "allow"
-  }
-}
-```
-
-복잡한 작업 중에 진행 상황을 추적하기 위해 작업 목록을 만들고 업데이트합니다. LLM은 멀티 단계 작업을 구성하기 위해 이것을 사용합니다.
-
-:::note
-이 도구는 기본으로 시약을 비활성화하지만 수동으로 활성화 할 수 있습니다. [더 알아보기](/docs/agents/#permissions)
-:::
 
 ---
 
@@ -341,7 +303,7 @@ MCP 서버 구성에 대한 [Learn more](/docs/mcp-servers).
 
 ## 내부
 
-내부, 도구 `grep`, `glob`, 그리고 `list` 사용 [ripgrep](https://github.com/BurntSushi/ripgrep) 후드 아래에. 기본적으로 ripgrep은 `.gitignore` 패턴을 존중하며 `.gitignore`에 나열된 파일 및 디렉토리를 검색 및 목록에서 제외됩니다.
+내부, 도구 `grep` 그리고 `glob` 사용 [ripgrep](https://github.com/BurntSushi/ripgrep) 후드 아래에. 기본적으로 ripgrep은 `.gitignore` 패턴을 존중하며 `.gitignore`에 나열된 파일 및 디렉토리를 검색 및 목록에서 제외됩니다.
 
 ---
 
