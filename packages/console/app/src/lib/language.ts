@@ -11,6 +11,7 @@ export const LOCALES = [
   "ja",
   "pl",
   "ru",
+  "uk",
   "ar",
   "no",
   "br",
@@ -41,6 +42,7 @@ const LABEL = {
   ja: "日本語",
   pl: "Polski",
   ru: "Русский",
+  uk: "Українська",
   ar: "العربية",
   no: "Norsk",
   br: "Português (Brasil)",
@@ -61,6 +63,7 @@ const TAG = {
   ja: "ja",
   pl: "pl",
   ru: "ru",
+  uk: "uk",
   ar: "ar",
   no: "no",
   br: "pt-BR",
@@ -81,6 +84,8 @@ const DOCS = {
   ja: "ja",
   pl: "pl",
   ru: "ru",
+  // There are no Ukrainian docs, so Ukrainian visitors read the English docs.
+  uk: "root",
   ar: "ar",
   no: "nb",
   br: "pt-br",
@@ -104,6 +109,7 @@ const DOCS_SEGMENT = new Set([
   "ru",
   "th",
   "tr",
+  "uk",
   "zh-cn",
   "zh-tw",
 ])
@@ -124,6 +130,7 @@ const DOCS_LOCALE = {
   ru: "ru",
   th: "th",
   tr: "tr",
+  uk: "uk",
   "zh-cn": "zh",
   "zh-tw": "zht",
 } as const satisfies Record<string, Locale>
@@ -203,6 +210,8 @@ export function route(locale: Locale, pathname: string) {
   if (next.startsWith("/docs")) return docs(locale, next)
   if (next.startsWith("/auth")) return next
   if (next.startsWith("/workspace")) return next
+  // The changelog worker owns /changelog and only publishes English release notes.
+  if (next === "/changelog" || next.startsWith("/changelog/")) return next
   if (locale === "en") return next
   if (next === "/") return `/${locale}`
   return `/${locale}${next}`
@@ -239,6 +248,7 @@ function match(input: string): Locale | null {
   if (value.startsWith("ja")) return "ja"
   if (value.startsWith("pl")) return "pl"
   if (value.startsWith("ru")) return "ru"
+  if (value.startsWith("uk")) return "uk"
   if (value.startsWith("ar")) return "ar"
   if (value.startsWith("tr")) return "tr"
   if (value.startsWith("th")) return "th"
@@ -312,6 +322,17 @@ export function localeFromRequest(request: Request) {
   return (
     localeFromCookieHeader(request.headers.get("cookie")) ??
     detectFromAcceptLanguage(request.headers.get("accept-language"))
+  )
+}
+
+// Pages take their language from the URL alone, so one URL serves the same language to people, crawlers and caches.
+export function pageLocale(request: Request) {
+  const pathname = new URL(request.url).pathname
+  return (
+    parseLocale(request.headers.get(LOCALE_HEADER)) ??
+    fromPathname(pathname) ??
+    fromDocsPathname(pathname) ??
+    ("en" satisfies Locale)
   )
 }
 

@@ -1,17 +1,10 @@
 import { Popover as Kobalte } from "@kobalte/core/popover"
-import {
-  ComponentProps,
-  JSXElement,
-  ParentProps,
-  Show,
-  createEffect,
-  onCleanup,
-  splitProps,
-  ValidComponent,
-} from "solid-js"
+import { ComponentProps, JSXElement, ParentProps, Show, createEffect, splitProps, ValidComponent } from "solid-js"
 import { createStore } from "solid-js/store"
+import { makeEventListener } from "@solid-primitives/event-listener"
 import { useI18n } from "../context/i18n"
-import { IconButton } from "./icon-button"
+import { Icon } from "@opencode/ui/icon"
+import { IconButton } from "@opencode/ui/icon-button"
 
 export interface PopoverProps<T extends ValidComponent = "div">
   extends ParentProps,
@@ -29,6 +22,7 @@ export interface PopoverProps<T extends ValidComponent = "div">
 
 export function Popover<T extends ValidComponent = "div">(props: PopoverProps<T>) {
   const i18n = useI18n()
+
   const [local, rest] = splitProps(props, [
     "trigger",
     "triggerAs",
@@ -54,14 +48,18 @@ export function Popover<T extends ValidComponent = "div">(props: PopoverProps<T>
   })
 
   const controlled = () => local.open !== undefined
+
   const opened = () => {
     if (controlled()) return local.open ?? false
+
     return state.uncontrolledOpen
   }
 
   const onOpenChange = (next: boolean) => {
     if (next) setState("dismiss", null)
+
     if (local.onOpenChange) local.onOpenChange(next)
+
     if (controlled()) return
     setState("uncontrolledOpen", next)
   }
@@ -72,9 +70,12 @@ export function Popover<T extends ValidComponent = "div">(props: PopoverProps<T>
     const inside = (node: Node | null | undefined) => {
       if (!node) return false
       const content = state.contentRef
+
       if (content && content.contains(node)) return true
       const trigger = state.triggerRef
+
       if (trigger && trigger.contains(node)) return true
+
       return false
     }
 
@@ -92,27 +93,25 @@ export function Popover<T extends ValidComponent = "div">(props: PopoverProps<T>
 
     const onPointerDown = (event: PointerEvent) => {
       const target = event.target
+
       if (!(target instanceof Node)) return
+
       if (inside(target)) return
       close("outside")
     }
 
     const onFocusIn = (event: FocusEvent) => {
       const target = event.target
+
       if (!(target instanceof Node)) return
+
       if (inside(target)) return
       close("outside")
     }
 
-    window.addEventListener("keydown", onKeyDown, true)
-    window.addEventListener("pointerdown", onPointerDown, true)
-    window.addEventListener("focusin", onFocusIn, true)
-
-    onCleanup(() => {
-      window.removeEventListener("keydown", onKeyDown, true)
-      window.removeEventListener("pointerdown", onPointerDown, true)
-      window.removeEventListener("focusin", onFocusIn, true)
-    })
+    makeEventListener(window, "keydown", onKeyDown, { capture: true })
+    makeEventListener(window, "pointerdown", onPointerDown, { capture: true })
+    makeEventListener(window, "focusin", onFocusIn, { capture: true })
   })
 
   const content = () => (
@@ -120,7 +119,7 @@ export function Popover<T extends ValidComponent = "div">(props: PopoverProps<T>
       ref={(el: HTMLElement | undefined) => setState("contentRef", el)}
       data-component="popover-content"
       classList={{
-        ...(local.classList ?? {}),
+        ...local.classList,
         [local.class ?? ""]: !!local.class,
       }}
       style={local.style}
@@ -136,7 +135,7 @@ export function Popover<T extends ValidComponent = "div">(props: PopoverProps<T>
           <Kobalte.CloseButton
             data-slot="popover-close-button"
             as={IconButton}
-            icon="close"
+            icon={<Icon name="close" />}
             variant="ghost"
             aria-label={i18n.t("ui.common.close")}
           />
