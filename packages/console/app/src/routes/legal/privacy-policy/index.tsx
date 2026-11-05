@@ -21,7 +21,7 @@ export default function PrivacyPolicy() {
           <section data-component="brand-content">
             <article data-component="privacy-policy">
               <h1>Privacy Policy</h1>
-              <p class="effective-date">Effective date: Mar 6, 2026</p>
+              <p class="effective-date">Effective date: Nov 4, 2026</p>
 
               <p>
                 At OpenCode, we take your privacy seriously. Please read this Privacy Policy to learn how we treat your
@@ -84,6 +84,11 @@ export default function PrivacyPolicy() {
                 </li>
                 <li>
                   <a href="#tracking-tools">Tracking Tools and Opt-Out</a>
+                  <ul>
+                    <li>
+                      <a href="#product-analytics">Product Analytics on opencode.ai/console</a>
+                    </li>
+                  </ul>
                 </li>
                 <li>
                   <a href="#data-security">Data Security</a>
@@ -237,9 +242,8 @@ export default function PrivacyPolicy() {
                       </td>
                       <td>
                         <ul>
-                          <li>Providing, Customizing and Improving the Services</li>
-                          <li>Marketing the Services</li>
-                          <li>Corresponding with You</li>
+                          <li>Passing through to upstream provider to provide services</li>
+                          <li>Not stored</li>
                         </ul>
                       </td>
                       <td>
@@ -471,6 +475,78 @@ export default function PrivacyPolicy() {
                 <a href="http://www.allaboutcookies.org/">http://www.allaboutcookies.org/</a>.
               </p>
 
+              <h3 id="product-analytics">Product Analytics on opencode.ai/console</h3>
+              <p>
+                When you visit pages under opencode.ai/console, including the sign-in pages, we record the pages you
+                view, how long each page is visible, how long you're active on it and how far you scroll, the links and
+                buttons you click, and the type of any sign-in error. In the Console we record the pages you open and
+                the controls you use in its navigation, plan, billing and onboarding screens. We also record account and
+                workspace events: when you sign up, sign in, verify your email, approve a device, create or delete a
+                workspace, invite or remove members, create API keys, connect providers or clients, and start or
+                complete a checkout or payment, including its amount and any decline reason. We use these records to
+                understand how people find OpenCode and where they stop before signing up or subscribing, so we can
+                improve the Services.
+              </p>
+
+              <p>
+                With each record sent from your browser, we keep the country, region and time zone your request came
+                from, the type of device, operating system and browser you used, and the size of your browser window. We
+                use your IP address to determine your country and region and to limit requests, but we don't store it,
+                your email address or anything you type in these records.
+              </p>
+
+              <p>
+                We set the following first-party Cookies. Your browser sends them only to opencode.ai/console. We also
+                keep a list in your browser's local storage of which events it has already reported that day.
+              </p>
+
+              <div class="table-wrapper">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Cookie</th>
+                      <th>What it holds</th>
+                      <th>How long it lasts</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td>oc_vid</td>
+                      <td>A random ID for your browser</td>
+                      <td>1 year from when it's first set</td>
+                    </tr>
+                    <tr>
+                      <td>oc_sid</td>
+                      <td>An ID for your current visit and the time it started</td>
+                      <td>30 minutes without activity, and at most 24 hours</td>
+                    </tr>
+                    <tr>
+                      <td>oc_attr</td>
+                      <td>
+                        How you first and most recently arrived: the page you landed on, the domain of the website that
+                        referred you, any campaign (UTM) parameters in the link, and the last sign-up or sign-in link
+                        you clicked
+                      </td>
+                      <td>1 year</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <p>
+                When you create an account, sign in, verify your email or approve a device, we link the records from
+                that browser to your account. Records made while you're signed in carry your account ID directly.
+              </p>
+
+              <p>
+                We delete these records from our analytics database within a month after they turn 24 months old. We
+                keep an archive copy of these records for longer. It contains your account ID if you were signed in, but
+                not your name, email address or IP address. When you delete your account, we delete your email address,
+                our record of how you first arrived and our list of the browsers linked to your account. Event records
+                that include your account ID, and the browser IDs recorded with them, remain until they're deleted at 24
+                months, and in the archive, but we can no longer connect that account ID to you.
+              </p>
+
               <h2 id="data-security">Data Security</h2>
               <p>
                 We seek to protect your Personal Data from unauthorized access, use and disclosure using appropriate
@@ -501,7 +577,7 @@ export default function PrivacyPolicy() {
                 otherwise use the Services or send us any Personal Data. If we learn we have collected Personal Data
                 from a child under 18 years of age, we will delete that information as quickly as possible. If you
                 believe that a child under 18 years of age may have provided Personal Data to us, please contact us at{" "}
-                <a href="mailto:contact@anoma.ly">contact@anoma.ly</a>.
+                <a href="mailto:help@anoma.ly">help@anoma.ly</a>.
               </p>
 
               <h2 id="california-resident-rights">California Resident Rights</h2>
@@ -520,7 +596,7 @@ export default function PrivacyPolicy() {
                 If there are any conflicts between this section and any other provision of this Privacy Policy and you
                 are a California resident, the portion that is more protective of Personal Data shall control to the
                 extent of such conflict. If you have any questions about this section or whether any of the following
-                rights apply to you, please contact us at <a href="mailto:contact@anoma.ly">contact@anoma.ly</a>.
+                rights apply to you, please contact us at <a href="mailto:help@anoma.ly">help@anoma.ly</a>.
               </p>
 
               <h3>Access</h3>
@@ -605,7 +681,7 @@ export default function PrivacyPolicy() {
                 If there are any conflicts between this section and any other provision of this Privacy Policy and you
                 are a Colorado resident, the portion that is more protective of Personal Data shall control to the
                 extent of such conflict. If you have any questions about this section or whether any of the following
-                rights apply to you, please contact us at <a href="mailto:contact@anoma.ly">contact@anoma.ly</a>.
+                rights apply to you, please contact us at <a href="mailto:help@anoma.ly">help@anoma.ly</a>.
               </p>
 
               <h3>Access and Portability</h3>
@@ -676,7 +752,7 @@ export default function PrivacyPolicy() {
                 If there are any conflicts between this section and any other provision of this Privacy Policy and you
                 are a Connecticut resident, the portion that is more protective of Personal Data shall control to the
                 extent of such conflict. If you have any questions about this section or whether any of the following
-                rights apply to you, please contact us at <a href="mailto:contact@anoma.ly">contact@anoma.ly</a>.
+                rights apply to you, please contact us at <a href="mailto:help@anoma.ly">help@anoma.ly</a>.
               </p>
 
               <h3>Access and Portability</h3>
@@ -745,7 +821,7 @@ export default function PrivacyPolicy() {
                 If there are any conflicts between this section and any other provision of this Privacy Policy and you
                 are a Delaware resident, the portion that is more protective of Personal Data shall control to the
                 extent of such conflict. If you have any questions about this section or whether any of the following
-                rights apply to you, please contact us at <a href="mailto:contact@anoma.ly">contact@anoma.ly</a>.
+                rights apply to you, please contact us at <a href="mailto:help@anoma.ly">help@anoma.ly</a>.
               </p>
 
               <h3>Access and Portability</h3>
@@ -818,7 +894,7 @@ export default function PrivacyPolicy() {
                 If there are any conflicts between this section and any other provision of this Privacy Policy and you
                 are an Iowa resident, the portion that is more protective of Personal Data shall control to the extent
                 of such conflict. If you have any questions about this section or whether any of the following rights
-                apply to you, please contact us at <a href="mailto:contact@anoma.ly">contact@anoma.ly</a>.
+                apply to you, please contact us at <a href="mailto:help@anoma.ly">help@anoma.ly</a>.
               </p>
 
               <h3>Access and Portability</h3>
@@ -864,7 +940,7 @@ export default function PrivacyPolicy() {
                 If there are any conflicts between this section and any other provision of this Privacy Policy and you
                 are a Montana resident, the portion that is more protective of Personal Data shall control to the extent
                 of such conflict. If you have any questions about this section or whether any of the following rights
-                apply to you, please contact us at <a href="mailto:contact@anoma.ly">contact@anoma.ly</a>.
+                apply to you, please contact us at <a href="mailto:help@anoma.ly">help@anoma.ly</a>.
               </p>
 
               <h3>Access and Portability</h3>
@@ -937,7 +1013,7 @@ export default function PrivacyPolicy() {
                 If there are any conflicts between this section and any other provision of this Privacy Policy and you
                 are a Nebraska resident, the portion that is more protective of Personal Data shall control to the
                 extent of such conflict. If you have any questions about this section or whether any of the following
-                rights apply to you, please contact us at <a href="mailto:contact@anoma.ly">contact@anoma.ly</a>.
+                rights apply to you, please contact us at <a href="mailto:help@anoma.ly">help@anoma.ly</a>.
               </p>
 
               <h3>Access and Portability</h3>
@@ -1007,7 +1083,7 @@ export default function PrivacyPolicy() {
                 If there are any conflicts between this section and any other provision of this Privacy Policy and you
                 are a New Hampshire resident, the portion that is more protective of Personal Data shall control to the
                 extent of such conflict. If you have any questions about this section or whether any of the following
-                rights apply to you, please contact us at <a href="mailto:contact@anoma.ly">contact@anoma.ly</a>.
+                rights apply to you, please contact us at <a href="mailto:help@anoma.ly">help@anoma.ly</a>.
               </p>
 
               <h3>Access and Portability</h3>
@@ -1078,7 +1154,7 @@ export default function PrivacyPolicy() {
                 If there are any conflicts between this section and any other provision of this Privacy Policy and you
                 are a New Jersey resident, the portion that is more protective of Personal Data shall control to the
                 extent of such conflict. If you have any questions about this section or whether any of the following
-                rights apply to you, please contact us at <a href="mailto:contact@anoma.ly">contact@anoma.ly</a>.
+                rights apply to you, please contact us at <a href="mailto:help@anoma.ly">help@anoma.ly</a>.
               </p>
 
               <h3>Access and Portability</h3>
@@ -1151,7 +1227,7 @@ export default function PrivacyPolicy() {
                 If there are any conflicts between this section and any other provision of this Privacy Policy and you
                 are an Oregon resident, the portion that is more protective of Personal Data shall control to the extent
                 of such conflict. If you have any questions about this section or whether any of the following rights
-                apply to you, please contact us at <a href="mailto:contact@anoma.ly">contact@anoma.ly</a>.
+                apply to you, please contact us at <a href="mailto:help@anoma.ly">help@anoma.ly</a>.
               </p>
 
               <h3>Access and Portability</h3>
@@ -1225,7 +1301,7 @@ export default function PrivacyPolicy() {
                 If there are any conflicts between this section and any other provision of this Privacy Policy and you
                 are a Texas resident, the portion that is more protective of Personal Data shall control to the extent
                 of such conflict. If you have any questions about this section or whether any of the following rights
-                apply to you, please contact us at <a href="mailto:contact@anoma.ly">contact@anoma.ly</a>.
+                apply to you, please contact us at <a href="mailto:help@anoma.ly">help@anoma.ly</a>.
               </p>
 
               <h3>Access and Portability</h3>
@@ -1293,7 +1369,7 @@ export default function PrivacyPolicy() {
                 If there are any conflicts between this section and any other provision of this Privacy Policy and you
                 are a Utah resident, the portion that is more protective of Personal Data shall control to the extent of
                 such conflict. If you have any questions about this section or whether any of the following rights apply
-                to you, please contact us at contact@anoma.ly.
+                to you, please contact us at help@anoma.ly.
               </p>
 
               <h3>Access and Portability</h3>
@@ -1339,7 +1415,7 @@ export default function PrivacyPolicy() {
                 If there are any conflicts between this section and any other provision of this Privacy Policy and you
                 are a Virginia resident, the portion that is more protective of Personal Data shall control to the
                 extent of such conflict. If you have any questions about this section or whether any of the following
-                rights apply to you, please contact us at <a href="mailto:contact@anoma.ly">contact@anoma.ly</a>.
+                rights apply to you, please contact us at <a href="mailto:help@anoma.ly">help@anoma.ly</a>.
               </p>
 
               <h3>Access and Portability</h3>
@@ -1418,7 +1494,7 @@ export default function PrivacyPolicy() {
               </p>
               <ul>
                 <li>
-                  Email us at <a href="mailto:contact@anoma.ly">contact@anoma.ly</a>
+                  Email us at <a href="mailto:help@anoma.ly">help@anoma.ly</a>
                 </li>
                 <li>Call us at: +1 415 794-0209</li>
               </ul>
@@ -1430,7 +1506,7 @@ export default function PrivacyPolicy() {
               </p>
               <ul>
                 <li>
-                  Email us at <a href="mailto:contact@anoma.ly">contact@anoma.ly</a>
+                  Email us at <a href="mailto:help@anoma.ly">help@anoma.ly</a>
                 </li>
                 <li>Call us at: +1 415 794-0209</li>
               </ul>
@@ -1457,7 +1533,7 @@ export default function PrivacyPolicy() {
               </p>
               <ul>
                 <li>
-                  Email us at <a href="mailto:contact@anoma.ly">contact@anoma.ly</a>
+                  Email us at <a href="mailto:help@anoma.ly">help@anoma.ly</a>
                 </li>
                 <li>Call us at: +1 415 794-0209</li>
               </ul>
@@ -1474,8 +1550,8 @@ export default function PrivacyPolicy() {
               <p>
                 Under California Civil Code Sections 1798.83-1798.84, California residents are entitled to contact us to
                 prevent disclosure of Personal Data to third parties for such third parties' direct marketing purposes;
-                in order to submit such a request, please contact us at{" "}
-                <a href="mailto:contact@anoma.ly">contact@anoma.ly</a>.
+                in order to submit such a request, please contact us at <a href="mailto:help@anoma.ly">help@anoma.ly</a>
+                .
               </p>
 
               <p>
@@ -1500,7 +1576,7 @@ export default function PrivacyPolicy() {
               </p>
               <ul>
                 <li>
-                  Email: <a href="mailto:contact@anoma.ly">contact@anoma.ly</a>
+                  Email: <a href="mailto:help@anoma.ly">help@anoma.ly</a>
                 </li>
                 <li>Phone: +1 415 794-0209</li>
                 <li>Address: 2443 Fillmore St #380-6343, San Francisco, CA 94115, United States</li>
