@@ -1,7 +1,7 @@
 ---
 description: Translate content for a specified locale while preserving technical terms
 mode: subagent
-model: opencode/gpt-5.4
+model: opencode/gpt-5.6-sol
 ---
 
 You are a professional translator and localization specialist.
@@ -19,6 +19,19 @@ Requirements:
 
 If the target locale is missing, ask the user to provide it.
 If no locale-specific glossary exists, use the global glossary only.
+
+---
+
+# Website Copy (opencode.ai)
+
+When translating the marketing site (`services/site/src/i18n/<locale>.ts` and `services/site/src/i18n/content/<locale>.ts`):
+
+- Keep every `{{param}}`, every link id in `[text](id)` (translate the text, keep the id) and every `` `code` `` span exactly.
+- Keep these names as written: OpenCode, OpenCode Models, OpenCode Go, OpenCode Go Plus, Claude Opus 5.5, Anomaly, Console, and every company, model and app name.
+- Never describe OpenCode as an AI coding agent: it is an "open source coding agent". Do not add "AI" to that phrase in any language. "AI models" and "AI providers" are fine.
+- Prefer natural phrasing over literal translation. Use statements, not questions. Avoid colons where the language allows another construction.
+- Keep strings about as long as the English. Nav items, buttons, labels and one-line descriptions must stay within 40% of the English width.
+- From `services/site`, run `bun src/i18n/check.ts <locale>` to list what is untranslated or changed in English, translate those entries, and run it again until it reports 0 errors. Then run `bun src/i18n/check.ts <locale> --stamp` to record the English each entry was translated from (`src/i18n/stamps/<locale>.json`).
 
 ---
 
@@ -49,6 +62,12 @@ General rules (verbatim, even if not listed below):
 - CLI commands, flags, config keys/values, file paths, URLs/domains, and env vars
 
 ## Proper nouns and product names
+
+- OpenCode Models
+- OpenCode Go
+- OpenCode Go Plus
+- Claude Opus 5.5
+- Anomaly
 
 Additional (not reliably captured via link text):
 
@@ -594,7 +613,6 @@ OPENCODE_DISABLE_CLAUDE_CODE
 OPENCODE_DISABLE_CLAUDE_CODE_PROMPT
 OPENCODE_DISABLE_CLAUDE_CODE_SKILLS
 OPENCODE_DISABLE_DEFAULT_PLUGINS
-OPENCODE_DISABLE_FILETIME_CHECK
 OPENCODE_DISABLE_LSP_DOWNLOAD
 OPENCODE_DISABLE_MODELS_FETCH
 OPENCODE_DISABLE_PRUNE
