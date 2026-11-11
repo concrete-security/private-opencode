@@ -29,7 +29,7 @@ permissions:
 jobs:
   files-build:
     if: github.repository == 'anomalyco/opencode' && (github.ref_name == 'dev' || github.ref_name == 'production')
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ubuntu-24.04
     outputs:
       digest: ${{ steps.upload.outputs.digest }}
     steps:
@@ -66,7 +66,7 @@ jobs:
   files-deploy:
     needs: files-build
     if: github.repository == 'anomalyco/opencode' && (github.ref_name == 'dev' || github.ref_name == 'production')
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ubuntu-24.04
     environment: ${{ github.ref_name }}
     permissions:
       contents: read
