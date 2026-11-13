@@ -1,7 +1,6 @@
-// @ts-nocheck
+import { For } from "solid-js"
 import { iconNames } from "./provider-icons/types"
-import * as mod from "./provider-icon"
-import { create } from "../storybook/scaffold"
+import { ProviderIcon } from "./provider-icon"
 
 const docs = `### Overview
 Provider icon sprite renderer for model/provider badges.
@@ -26,11 +25,11 @@ Use in model pickers or provider lists.
 
 `
 
-const story = create({ title: "UI/ProviderIcon", mod, args: { id: "openai" } })
 export default {
   title: "UI/ProviderIcon",
   id: "components-provider-icon",
-  component: story.meta.component,
+  component: ProviderIcon,
+  args: { id: "openai" },
   tags: ["autodocs"],
   parameters: {
     docs: {
@@ -42,15 +41,15 @@ export default {
   argTypes: {
     id: {
       control: "select",
-      options: iconNames,
+      options: [...iconNames, "unknown-provider"],
     },
   },
 }
 
-export const Basic = story.Basic
+export const Basic = {}
 
 export const AllIcons = {
-  render: () => (
+  render: (args: { id: string }) => (
     <div
       style={{
         display: "grid",
@@ -58,12 +57,19 @@ export const AllIcons = {
         "grid-template-columns": "repeat(auto-fill, minmax(80px, 1fr))",
       }}
     >
-      {iconNames.map((id) => (
-        <div style={{ display: "grid", gap: "6px", "justify-items": "center" }}>
-          <mod.ProviderIcon id={id} width="28" height="28" aria-label={id} />
-          <div style={{ "font-size": "10px", color: "var(--text-weak)", "text-align": "center" }}>{id}</div>
-        </div>
-      ))}
+      <For each={[...iconNames, "unknown-provider"]}>
+        {(id) => (
+          <div
+            classList={{ "font-bold": args.id === id }}
+            style={{ display: "grid", gap: "6px", "justify-items": "center" }}
+          >
+            <ProviderIcon id={id} width="28" height="28" aria-label={id} />
+            <div style={{ "font-size": "10px", color: "var(--text-weak)", "text-align": "center" }}>{id}</div>
+          </div>
+        )}
+      </For>
     </div>
   ),
 }
+
+export const Fallback = { args: { id: "unknown-provider" } }
