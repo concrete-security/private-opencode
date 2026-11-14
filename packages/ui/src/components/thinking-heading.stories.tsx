@@ -1,13 +1,26 @@
 // @ts-nocheck
-import { createEffect, on, onMount, onCleanup } from "solid-js"
+import { createEffect, For, on, onMount, onCleanup } from "solid-js"
 import { createStore } from "solid-js/store"
-import { TextShimmer } from "./text-shimmer"
+import { TextShimmer } from "@opencode/ui/text-shimmer"
 import { TextReveal } from "./text-reveal"
 
 export default {
   title: "UI/ThinkingHeading",
   id: "components-thinking-heading",
   tags: ["autodocs"],
+  args: {
+    heading: "Planning key generation details",
+    active: true,
+    duration: 550,
+    travel: 25,
+    bounce: 1.35,
+    compare: false,
+  },
+  argTypes: {
+    duration: { control: { type: "range", min: 200, max: 1400, step: 50 } },
+    travel: { control: { type: "range", min: 0, max: 120, step: 1 } },
+    bounce: { control: { type: "range", min: 1, max: 2.2, step: 0.05 } },
+  },
   parameters: {
     docs: {
       description: {
@@ -383,6 +396,7 @@ function AnimatedHeading(props) {
     ready: false,
     swapping: false,
   })
+
   const current = () => state.current
   const leaving = () => state.leaving
   const width = () => state.width
@@ -395,9 +409,11 @@ function AnimatedHeading(props) {
 
   const measureEnter = () => enterRef?.scrollWidth ?? 0
   const measureLeave = () => leaveRef?.scrollWidth ?? 0
+
   const widen = (px) => {
     if (px <= 0) return
     const w = Number.parseFloat(width())
+
     if (Number.isFinite(w) && px <= w) return
     setState("width", `${px}px`)
   }
@@ -405,9 +421,12 @@ function AnimatedHeading(props) {
   const measure = () => {
     if (!current()) {
       setState("width", "0px")
+
       return
     }
+
     const px = measureEnter()
+
     if (px > 0) setState("width", `${px}px`)
   }
 
@@ -434,6 +453,7 @@ function AnimatedHeading(props) {
             setState("swapping", false)
             measure()
           }
+
           frame = undefined
         })
       },
@@ -442,7 +462,7 @@ function AnimatedHeading(props) {
 
   onMount(() => {
     measure()
-    document.fonts?.ready.finally(() => {
+    void document.fonts?.ready.finally(() => {
       measure()
       requestAnimationFrame(() => setState("ready", true))
     })
@@ -552,14 +572,21 @@ const cardStyle = {
 // Variants
 // ---------------------------------------------------------------------------
 
-const VARIANTS: { key: string; label: string }[] = []
+const VARIANTS = ["spring-up", "spring-down", "spring-pop", "spring-blur", "odometer"]
 
 // ---------------------------------------------------------------------------
 // Story
 // ---------------------------------------------------------------------------
 
 export const Playground = {
-  render: () => {
+  render: (args: {
+    heading: string
+    active: boolean
+    duration: number
+    travel: number
+    bounce: number
+    compare: boolean
+  }) => {
     const [state, setState] = createStore({
       heading: HEADINGS[0],
       headingIndex: 0,
@@ -567,7 +594,7 @@ export const Playground = {
       cycling: false,
       duration: 550,
       blur: 2,
-      travel: 4,
+      travel: 25,
       bounce: 1.35,
       maskSize: 12,
       maskPad: 9,
@@ -575,6 +602,16 @@ export const Playground = {
       debug: false,
       odoBlur: false,
     })
+
+    for (const key of ["duration", "travel", "bounce", "active"] as const) {
+      createEffect(() => setState(key, args[key]))
+    }
+
+    createEffect(() => {
+      setState("heading", args.heading || undefined)
+      setState("headingIndex", Math.max(0, HEADINGS.indexOf(args.heading || undefined)))
+    })
+
     const heading = () => state.heading
     const headingIndex = () => state.headingIndex
     const active = () => state.active
@@ -607,19 +644,24 @@ export const Playground = {
         clearTimeout(cycleTimer)
         cycleTimer = undefined
         setState("cycling", false)
+
         return
       }
+
       setState("cycling", true)
+
       const tick = () => {
         if (!cycling()) return
         nextHeading()
         cycleTimer = setTimeout(tick, 850 + Math.floor(Math.random() * 550))
       }
+
       cycleTimer = setTimeout(tick, 850 + Math.floor(Math.random() * 550))
     }
 
     const clearHeading = () => {
       setState("heading", undefined)
+
       if (cycling()) {
         clearTimeout(cycleTimer)
         cycleTimer = undefined
@@ -658,7 +700,7 @@ export const Playground = {
                 <TextReveal
                   text={heading()}
                   duration={duration()}
-                  travel={25}
+                  travel={travel()}
                   edge={17}
                   spring={`cubic-bezier(0.34, ${bounce()}, 0.64, 1)`}
                   springSoft={`cubic-bezier(0.34, ${Math.max(bounce() * 0.7, 1)}, 0.64, 1)`}
@@ -667,22 +709,24 @@ export const Playground = {
               </span>
             </span>
           </div>
-          {VARIANTS.map((v) => (
-            <div style={cardStyle}>
-              <span style={cardLabel}>{v.label}</span>
-              <span style={thinkingRow}>
-                <TextShimmer text="Thinking" active={active()} />
-                <span style={headingSlot}>
-                  <AnimatedHeading
-                    text={heading()}
-                    variant={v.key}
-                    debug={v.key === "odometer" && debug()}
-                    odoBlur={v.key === "odometer" && odoBlur()}
-                  />
+          <For each={args.compare ? VARIANTS : []}>
+            {(v) => (
+              <div style={cardStyle}>
+                <span style={cardLabel}>{v}</span>
+                <span style={thinkingRow}>
+                  <TextShimmer text="Thinking" active={active()} />
+                  <span style={headingSlot}>
+                    <AnimatedHeading
+                      text={heading()}
+                      variant={v}
+                      debug={v === "odometer" && debug()}
+                      odoBlur={v === "odometer" && odoBlur()}
+                    />
+                  </span>
                 </span>
-              </span>
-            </div>
-          ))}
+              </div>
+            )}
+          </For>
         </div>
 
         {/* ── Sliders ──────────────────────────────────────── */}
@@ -824,17 +868,19 @@ export const Playground = {
           </div>
 
           <div style={{ display: "flex", gap: "6px", "flex-wrap": "wrap" }}>
-            {HEADINGS.map((h, i) => (
-              <button
-                onClick={() => {
-                  setState("headingIndex", i)
-                  setState("heading", h)
-                }}
-                style={smallBtn(headingIndex() === i)}
-              >
-                {h ?? "(no submessage)"}
-              </button>
-            ))}
+            <For each={HEADINGS}>
+              {(h, i) => (
+                <button
+                  onClick={() => {
+                    setState("headingIndex", i())
+                    setState("heading", h)
+                  }}
+                  style={smallBtn(headingIndex() === i())}
+                >
+                  {h ?? "(no submessage)"}
+                </button>
+              )}
+            </For>
           </div>
 
           <div
