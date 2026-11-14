@@ -1,7 +1,6 @@
-// @ts-nocheck
-import { iconNames } from "./app-icons/types"
-import * as mod from "./app-icon"
-import { create } from "../storybook/scaffold"
+import { For } from "solid-js"
+import { iconNames, type IconName } from "./app-icons/types"
+import { AppIcon } from "./app-icon"
 
 const docs = `### Overview
 Application icon renderer for known editor/terminal apps.
@@ -26,11 +25,11 @@ Use in provider or app selection lists.
 
 `
 
-const story = create({ title: "UI/AppIcon", mod, args: { id: "vscode" } })
 export default {
   title: "UI/AppIcon",
   id: "components-app-icon",
-  component: story.meta.component,
+  component: AppIcon,
+  args: { id: "vscode" },
   tags: ["autodocs"],
   parameters: {
     docs: {
@@ -47,10 +46,10 @@ export default {
   },
 }
 
-export const Basic = story.Basic
+export const Basic = {}
 
 export const AllIcons = {
-  render: () => (
+  render: (args: { id: IconName }) => (
     <div
       style={{
         display: "grid",
@@ -58,12 +57,17 @@ export const AllIcons = {
         "grid-template-columns": "repeat(auto-fill, minmax(72px, 1fr))",
       }}
     >
-      {iconNames.map((id) => (
-        <div style={{ display: "grid", gap: "6px", "justify-items": "center" }}>
-          <mod.AppIcon id={id} alt={id} />
-          <div style={{ "font-size": "10px", color: "var(--text-weak)", "text-align": "center" }}>{id}</div>
-        </div>
-      ))}
+      <For each={iconNames}>
+        {(id) => (
+          <div
+            classList={{ "font-bold": args.id === id }}
+            style={{ display: "grid", gap: "6px", "justify-items": "center" }}
+          >
+            <AppIcon id={id} alt={id} />
+            <div style={{ "font-size": "10px", color: "var(--text-weak)", "text-align": "center" }}>{id}</div>
+          </div>
+        )}
+      </For>
     </div>
   ),
 }
