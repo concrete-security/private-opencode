@@ -1,0 +1,1057 @@
+import { createEffect, createMemo, createSignal, Match, on, onCleanup, Show, Switch, untrack } from "solid-js"
+import { Portal } from "solid-js/web"
+import { useLocation } from "@solidjs/router"
+import { uuid } from "@opencode/util/uuid"
+import { useDialog } from "@opencode/ui/context/dialog"
+import { IconButton } from "@opencode/ui/icon-button"
+import { Icon } from "@opencode/ui/icon"
+import { Keybind } from "@opencode/ui/keybind"
+import { Tooltip } from "@opencode/ui/tooltip"
+
+import { useLayout } from "@/shell/state/layout"
+import { usePlatform } from "@/runtime/platform/platform"
+import { useCommand } from "@/shell/commands/command"
+import { useLanguage } from "@/runtime/i18n/language"
+import { useSettings } from "@/settings/model"
+import { useProjectNavigation } from "@/shell/project-navigation"
+import { useProjectBrowser } from "@/home/projects/browse"
+import { useProjectStart } from "@/home/projects/start"
+import { WindowsAppMenu } from "./windows-menu"
+import { createTitlebarHistory } from "./history"
+import { TitlebarTabStrip } from "@/shell/titlebar/tab-strip"
+import { createPinnedLeading, PinMenuItems, PinnedArea, PinsProvider, usePins } from "@/shell/titlebar/pinned-area"
+import { macVerticalTrafficLights, SidebarToggle } from "@/shell/sidebar-toggle"
+import { SidebarInbox } from "@/shell/titlebar/inbox"
+import { SidebarCustomized, type SidebarStripGrouping } from "@/shell/titlebar/sidebar-customized"
+import { RecentSessions } from "@/shell/titlebar/recent-sessions"
+import { createNavigationSwitch } from "@/shell/tabs/navigation-switch"
+import { makeEventListener } from "@solid-primitives/event-listener"
+import { createMediaQuery } from "@solid-primitives/media"
+import { readSessionTabsRemovedDetail, SESSION_TABS_REMOVED_EVENT } from "@/shell/titlebar/session-events"
+import { useGlobal } from "@/runtime/server/runtime"
+import { ServerConnection } from "@/runtime/server/registry"
+import { tabKey, useTabs, type Tab } from "@/shell/tabs/tabs"
+import type { ComposerState } from "@/composer/persistence"
+import "./titlebar.css"
+import { MobileDrawer, MobileDrawerContent, MobileDrawerLabel, MobileDrawerTrigger } from "@/shell/mobile-drawer"
+import { sessionTabTitle } from "./tab-title"
+import { SessionTabAvatarView } from "@/shell/layout/session-tab-avatar"
+import { useSessionTabAvatarState } from "@/shell/layout/project-avatar-state"
+import { ActivityRing } from "@opencode/ui/activity-ring"
+import { RecentlyClosedTabsMenu } from "./recently-closed-tabs-menu"
+import { useSettingsCommand, useSettingsDialog } from "@/settings/command"
+import { TitlebarItems, useTitlebarItems } from "@/runtime/plugin/titlebar-items"
+import { createRouteTabSync } from "./route-sync"
+import {
+  INITIAL_MOBILE_TABS_STATE,
+  selectMobileTabsOpen,
+  transitionMobileTabs,
+  type MobileTabsEvent,
+} from "./mobile-tabs-machine"
+import {
+  createVerticalTabGroupSections,
+  TabAddToGroupMenuItems,
+  TabGroupsProvider,
+  useTabGroups,
+  VerticalTabGroupsControls,
+} from "./tab-groups-ui"
+
+export const newTabCommand = { id: "tab.new", keybind: "mod+t,mod+n" }
+
+/** Search projects: a draft searches in place; everywhere else it opens a new draft with the project picker open. */
+export const projectSearchCommand = { id: "project.select", keybind: "mod+shift+o" }
+
+export const goBackCommand = { id: "common.goBack", keybind: "mod+[" }
+
+export const goForwardCommand = { id: "common.goForward", keybind: "mod+]" }
+
+const titlebarHeight = 36
+
+const windowsTitlebarHeight = 44 // Includes the content inset; matches the native Windows overlay.
+
+const minTitlebarZoom = 0.25
+
+const windowsControlsBaseWidth = 138 // 3 native Windows caption buttons at 46px each.
+
+const macTrafficLightsBaseWidth = 74
+
+const macTrafficLightsTopClearance = 28
+
+// iOS blurs page content just below the status bar in Home Screen web apps, so with a top safe area the phone
+// titlebar row stays 16px clear of it, as ChatGPT's phone header does. Without one, 8px matches the content gap below.
+const mobileTopClearance = "max(8px, min(16px, env(safe-area-inset-top, 0px) * 1000))"
+
+function SidebarAction(props: {
+  action: string
+  icon: string
+  label: string
+  keybind: string[]
+  pressed?: boolean
+  current?: boolean
+  onClick: () => void
+}) {
+  return (
+    <button
+      type="button"
+      data-titlebar-tab-action
+      data-action={props.action}
+      data-state={props.pressed || props.current ? "pressed" : undefined}
+      class="group flex h-7 w-full shrink-0 items-center gap-2 rounded-[6px] px-2 text-[13px] leading-[var(--line-height-compact)] text-v2-text-text-faint hover:text-v2-text-text-base data-[state=pressed]:text-v2-text-text-base"
+      aria-label={props.label}
+      aria-pressed={props.pressed}
+      aria-current={props.current ? "page" : undefined}
+      onClick={props.onClick}
+    >
+      <Icon name={props.icon} class="shrink-0" />
+      <span class="min-w-0 truncate">{props.label}</span>
+      <div class="ms-auto hidden shrink-0 group-hover:block group-focus-visible:block" aria-hidden="true">
+        <Keybind keys={props.keybind} variant="neutral" dir="ltr" />
+      </div>
+    </button>
+  )
+}
+
+export function Titlebar(props: { verticalTabs?: { mount?: HTMLElement } }) {
+  const platform = usePlatform()
+  const command = useCommand()
+  const language = useLanguage()
+  const settings = useSettings()
+
+  const openSettings = useSettingsDialog()
+  const dialog = useDialog()
+  const location = useLocation()
+  const mobile = createMediaQuery("(max-width: 767px)")
+  const bottom = createMemo(() => mobile() && settings.general.mobileTitlebarPosition() === "bottom")
+  const mobileTop = createMemo(() => platform.platform === "web" && mobile() && !bottom())
+
+  const mac = createMemo(() => platform.platform === "desktop" && platform.os === "macos")
+  const windows = createMemo(() => platform.platform === "desktop" && platform.os === "windows")
+  const linux = createMemo(() => platform.platform === "desktop" && platform.os === "linux")
+  const macTrafficLights = createMemo(() => mac() && !platform.windowFullscreen?.())
+  const macVerticalTabs = createMemo(() => mac() && !!props.verticalTabs)
+  const zoom = () => platform.webviewZoom?.() ?? 1
+  const titlebarZoom = () => (windows() ? Math.max(zoom(), minTitlebarZoom) : zoom())
+
+  const minHeight = () => {
+    if (mac()) return `${titlebarHeight / zoom()}px`
+
+    if (windows()) return `env(titlebar-area-height, ${windowsTitlebarHeight / Math.min(titlebarZoom(), 1)}px)`
+
+    return undefined
+  }
+
+  const windowsControlsWidth = () => `${windowsControlsBaseWidth / Math.max(titlebarZoom(), 1)}px`
+
+  let titlebarRow!: HTMLDivElement
+
+  // Native buttons stay 14pt tall while the renderer scales. The tabs center in the row's padded content box.
+  createEffect(() => {
+    if (!mac()) return
+
+    const scale = zoom()
+
+    if (macVerticalTabs()) {
+      void platform.setTrafficLightsPosition?.(macVerticalTrafficLights(scale))
+
+      return
+    }
+
+    // The native buttons stay at the window's top edge when a narrow window moves the titlebar row to the bottom.
+    if (bottom()) {
+      void platform.setTrafficLightsPosition?.({ x: 14, y: 14 })
+
+      return
+    }
+
+    const frame = requestAnimationFrame(() => {
+      const bounds = titlebarRow.getBoundingClientRect()
+
+      const style = getComputedStyle(titlebarRow)
+
+      void platform.setTrafficLightsPosition?.({
+        x: 14,
+        y:
+          (bounds.top + (bounds.height + parseFloat(style.paddingTop) - parseFloat(style.paddingBottom)) / 2) * scale -
+          7,
+      })
+    })
+
+    onCleanup(() => cancelAnimationFrame(frame))
+  })
+
+  const history = createTitlebarHistory()
+  const path = () => `${location.pathname}${location.search}${location.hash}`
+
+  const titlebarItems = useTitlebarItems()
+  const hideVerticalTitlebar = createMemo(() => !!props.verticalTabs && !windows())
+  const actionInSidebarHeader = () => !windows() && !macTrafficLights()
+
+  command.register(() => [
+    {
+      ...goBackCommand,
+      title: language.t("common.goBack"),
+      category: language.t("command.category.view"),
+      onSelect: history.back,
+    },
+    {
+      ...goForwardCommand,
+      title: language.t("common.goForward"),
+      category: language.t("command.category.view"),
+      onSelect: history.forward,
+    },
+  ])
+
+  return (
+    <header
+      data-slot="titlebar-v2"
+      hidden={hideVerticalTitlebar()}
+      classList={{
+        "shrink-0 relative flex flex-row h-9 bg-v2-background-bg-deep overflow-visible": true,
+        "order-last": bottom(),
+      }}
+      style={{
+        height:
+          platform.platform === "web"
+            ? bottom()
+              ? "calc(28px + max(8px, var(--shell-safe-area-bottom, var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)))))"
+              : mobileTop()
+                ? `calc(28px + ${mobileTopClearance} + env(safe-area-inset-top, 0px))`
+                : "calc(28px + max(8px, env(safe-area-inset-top, 0px)))"
+            : undefined,
+        "padding-top": bottom()
+          ? "0px"
+          : mobileTop()
+            ? `calc(${mobileTopClearance} + env(safe-area-inset-top, 0px))`
+            : "env(safe-area-inset-top, 0px)",
+        // A docked composer touch bar below takes over the safe area.
+        "padding-bottom": bottom()
+          ? "var(--shell-safe-area-bottom, var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)))"
+          : "0px",
+        "min-height": minHeight(),
+        // Keep native macOS traffic lights clear even when the desktop window is narrow.
+        "padding-left": macTrafficLights() ? `${macTrafficLightsBaseWidth / zoom()}px` : 0,
+        width: windows() ? `env(titlebar-area-width, calc(100vw - ${windowsControlsWidth()}))` : undefined,
+        "max-width": windows() ? `env(titlebar-area-width, calc(100vw - ${windowsControlsWidth()}))` : undefined,
+        // Native Windows caption controls remain on the physical right in both writing directions.
+        "margin-right": windows() ? "auto" : undefined,
+      }}
+      data-tauri-drag-region
+    >
+      <Switch>
+        <Match when>
+          {(_) => {
+            const layout = useLayout()
+            const global = useGlobal()
+
+            const projectNavigation = useProjectNavigation()
+
+            const browseProjects = useProjectBrowser()
+
+            const projectStart = useProjectStart()
+
+            const tabs = useTabs()
+            const tabsStore = tabs.store
+
+            createEffect(() => {
+              if (
+                settings.appearance.tabLayout() === "vertical" &&
+                settings.general.sidebarOrganize() === "customize" &&
+                !mobile()
+              )
+                return
+
+              if (tabs.preview()) tabs.keepPreview()
+            })
+            const tabsStoreActions = tabs
+
+            const routeSync = createRouteTabSync()
+            const preparing = routeSync.preparing
+            const session = routeSync.session
+            const currentTab = routeSync.currentTab
+            createNavigationSwitch(currentTab)
+
+            makeEventListener(window, SESSION_TABS_REMOVED_EVENT, (event) => {
+              const detail = readSessionTabsRemovedDetail(event)
+
+              if (!detail) return
+              tabsStoreActions.removeSessions(detail)
+            })
+
+            /** Opens draft `draftID` for the current context. Returns false when there is nothing to open it in. */
+            const openDraft = (draftID: string) => {
+              const route = layout.route()
+
+              if (projectNavigation() && (route.type === "home" || route.type === "settings"))
+                return projectStart.start(draftID)
+
+              switch (route.type) {
+                case "session": {
+                  const pending = tabs.pendingSession(route.server, route.sessionId)
+
+                  if (pending) {
+                    const model = tabs.stateValue<ComposerState>(pending.draft, "prompt")?.model.current()
+                    void tabs.newDraft({ server: route.server, directory: pending.draft.directory, draftID }, "", model)
+
+                    return true
+                  }
+
+                  const activeSession = session()
+
+                  if (!activeSession) return false
+
+                  const sessionTab = {
+                    type: "session" as const,
+                    server: route.server,
+                    sessionId: activeSession.id,
+                  }
+
+                  const model = tabs.stateValue<ComposerState>(sessionTab, "prompt")?.model.current()
+                  void tabs.newDraft(
+                    { server: sessionTab.server, directory: activeSession.location.directory, draftID },
+                    "",
+                    model,
+                  )
+
+                  return true
+                }
+
+                case "draft": {
+                  const activeTab = currentTab()
+
+                  if (activeTab?.type !== "draft") return false
+
+                  const model = tabs.stateValue<ComposerState>(activeTab, "prompt")?.model.current()
+                  void tabs.newDraft({ server: activeTab.server, directory: activeTab.directory, draftID }, "", model)
+
+                  return true
+                }
+
+                case "settings":
+                case "connect":
+                case "components":
+                case "home": {
+                  const selection = layout.home.selection()
+
+                  const conn =
+                    global.servers.list().find((item) => ServerConnection.key(item) === selection.server) ??
+                    global.servers.list()[0]
+
+                  const projects = conn ? global.serverCtx(ServerConnection.key(conn))?.projects : undefined
+
+                  const project =
+                    projects?.list().find((item) => item.worktree === selection.directory) ??
+                    projects?.last() ??
+                    projects?.list()[0]
+
+                  if (conn && project) {
+                    void tabs.newDraft({ server: ServerConnection.key(conn), directory: project.worktree, draftID }, "")
+
+                    return true
+                  }
+
+                  return false
+                }
+              }
+            }
+
+            const openNewTab = () => openDraft(uuid())
+
+            const toggleHome = () => tabs.toggleHome({ home: layout.route().type === "home", current: currentTab() })
+
+            const verticalTabStrip = (
+              highlightActive?: () => boolean,
+              onNavigate?: () => void,
+              grouped?: SidebarStripGrouping,
+            ) => (
+              <TitlebarTabStrip
+                orientation="vertical"
+                highlightActive={highlightActive?.()}
+                sections={grouped?.sections}
+                tabFooter={grouped?.tabFooter}
+                tabLabel={grouped?.tabLabel}
+                tabMenu={grouped?.tabMenu}
+                tabMuted={grouped?.tabMuted}
+                leading={grouped?.leading}
+                tabs={tabsStore}
+                currentTab={currentTab()}
+                onNavigate={(tab, el) => {
+                  onNavigate?.()
+                  tabs.select(tab)
+                  el?.scrollIntoView({ behavior: "instant", block: "nearest" })
+                }}
+                onClose={(tab) => {
+                  const index = tabsStore.findIndex((item) => tabKey(item) === tabKey(tab))
+
+                  if (index !== -1) tabsStoreActions.closeTab(index)
+                }}
+                onCloseTabs={(items, keep) => tabsStoreActions.closeTabs(items.map(tabKey), keep)}
+                onReorder={(keys) => tabsStoreActions.reorder(keys)}
+              />
+            )
+
+            const homeLabel = () =>
+              language.t(settings.appearance.navigationPrototype() ? "sidebar.sessions" : "home.title")
+
+            const homeIcon = () => (settings.appearance.navigationPrototype() ? "sessions-stack" : "grid-plus")
+
+            const homeButton = (vertical = false) => (
+              <Show
+                when={vertical}
+                fallback={
+                  <Tooltip
+                    placement="bottom"
+                    value={
+                      <>
+                        {homeLabel()}
+                        <Keybind keys={command.keybindParts("home.toggle")} variant="neutral" />
+                      </>
+                    }
+                    class="shrink-0"
+                  >
+                    <IconButton
+                      type="button"
+                      variant="ghost-muted"
+                      size="large"
+                      class="!w-9 shrink-0"
+                      icon={<Icon name={homeIcon()} />}
+                      state={layout.route().type === "home" ? "pressed" : undefined}
+                      onClick={toggleHome}
+                      aria-label={homeLabel()}
+                      aria-pressed={layout.route().type === "home"}
+                    />
+                  </Tooltip>
+                }
+              >
+                <SidebarAction
+                  action="vertical-tabs-home"
+                  icon={homeIcon()}
+                  label={homeLabel()}
+                  keybind={command.keybindParts("home.toggle")}
+                  pressed={layout.route().type === "home"}
+                  onClick={toggleHome}
+                />
+              </Show>
+            )
+
+            const searchButton = (vertical = false) => (
+              <Show
+                when={vertical}
+                fallback={
+                  <Tooltip
+                    placement="bottom"
+                    value={
+                      <>
+                        {language.t("command.session.search")}
+                        <Keybind keys={command.keybindParts("sessions.search")} variant="neutral" />
+                      </>
+                    }
+                    class="shrink-0"
+                  >
+                    <IconButton
+                      type="button"
+                      variant="ghost-muted"
+                      size="large"
+                      class="!w-9 shrink-0"
+                      icon={<Icon name="magnifying-glass" />}
+                      onClick={() => command.trigger("sessions.search")}
+                      aria-label={language.t("command.session.search")}
+                    />
+                  </Tooltip>
+                }
+              >
+                <SidebarAction
+                  action="vertical-tabs-search"
+                  icon="magnifying-glass"
+                  label={language.t("command.session.search")}
+                  keybind={command.keybindParts("sessions.search")}
+                  onClick={() => command.trigger("sessions.search")}
+                />
+              </Show>
+            )
+
+            const newSessionButton = () => (
+              <RecentlyClosedTabsMenu vertical onNewTab={openNewTab} keybind={command.keybindParts("tab.new")} />
+            )
+
+            const settingsButton = () => {
+              const show = useSettingsCommand()
+
+              return (
+                <SidebarAction
+                  action="vertical-tabs-settings"
+                  icon="settings-gear"
+                  label={language.t("sidebar.settings")}
+                  keybind={command.keybindParts("settings.open")}
+                  current={layout.route().type === "settings"}
+                  onClick={show}
+                />
+              )
+            }
+
+            const firstSidebarAction = () => (
+              <Show when={projectNavigation() || settings.appearance.navigationPrototype()} fallback={homeButton(true)}>
+                {newSessionButton()}
+              </Show>
+            )
+
+            command.register("titlebar-home", () => [
+              {
+                id: "home.toggle",
+                title: language.t(projectNavigation() ? "project.browse.title" : "home.title"),
+                category: language.t("command.category.view"),
+                keybind: windows() ? "alt+home" : "mod+b",
+                hidden: true,
+                onSelect: () => {
+                  if (projectNavigation()) return browseProjects()
+
+                  if (layout.route().type !== "home") layout.home.searchFocus.request()
+                  toggleHome()
+                },
+              },
+              {
+                id: "sessions.search",
+                title: language.t("command.session.search"),
+                category: language.t("command.category.session"),
+                keybind: "mod+shift+f",
+                onSelect: async () => {
+                  // The navigation prototype searches on Home, whose search field takes focus when it opens.
+                  if (settings.appearance.navigationPrototype()) {
+                    if (layout.route().type !== "home") return void toggleHome()
+
+                    return void command.trigger("session.search")
+                  }
+
+                  const { DialogSessionSearch } = await import("@/shell/commands/session-search")
+                  void dialog.show(() => <DialogSessionSearch />)
+                },
+              },
+            ])
+
+            command.register("tabs", () => {
+              const current = currentTab()
+
+              const closeCurrent = () => {
+                if (current === tabs.preview()) {
+                  tabs.closePreview()
+
+                  return
+                }
+
+                tabsStoreActions.closeTab(tabsStore.findIndex((tab) => current === tab))
+              }
+
+              return [
+                {
+                  ...newTabCommand,
+                  category: "tab",
+                  title: language.t("command.session.new"),
+                  hidden: true,
+                  onSelect: openNewTab,
+                },
+                current && {
+                  id: "tab.close",
+                  category: "tab",
+                  title: language.t("command.tab.close"),
+                  keybind: "mod+w",
+                  hidden: true,
+                  onSelect: closeCurrent,
+                },
+                current && {
+                  id: "tab.closeSession",
+                  category: "tab",
+                  title: language.t("command.tab.closeSession"),
+                  keybind: "mod+alt+w",
+                  onSelect: closeCurrent,
+                },
+                {
+                  id: "tab.reopenClosed",
+                  category: language.t("command.category.file"),
+                  title: language.t("command.tab.reopenClosed"),
+                  keybind: "mod+shift+t",
+                  onSelect: () => tabsStoreActions.reopenClosedTab(),
+                },
+              ].filter((v) => v !== undefined)
+            })
+
+            // A draft registers this command under the same key and shadows it while mounted, searching projects in place.
+            // Sharing the key, not checking the route, keeps exactly one owner while the router commits a transition.
+            command.register(projectSearchCommand.id, () => [
+              {
+                ...projectSearchCommand,
+                title: language.t("session.new.project.search"),
+                category: language.t("command.category.project"),
+                onSelect: () => {
+                  const draftID = uuid()
+
+                  if (openDraft(draftID)) layout.draft.projectSearch.request(draftID)
+                },
+              },
+            ])
+
+            const [mobileTabsState, setMobileTabsState] = createSignal(INITIAL_MOBILE_TABS_STATE)
+            let closeTimer: ReturnType<typeof setTimeout> | undefined
+
+            const dispatchMobileTabs = (event: MobileTabsEvent) => {
+              const previous = untrack(mobileTabsState)
+              const next = transitionMobileTabs(previous, event)
+
+              if (next.state !== previous) setMobileTabsState(next.state)
+              next.effects.forEach((effect) => {
+                if (effect.type === "settings.open") return openSettings()
+                clearTimeout(closeTimer)
+                closeTimer = undefined
+
+                if (effect.type === "timer.clear") return
+                const attempt = effect.attempt
+                closeTimer = setTimeout(
+                  () => dispatchMobileTabs({ type: "close.timed-out", attempt }),
+                  effect.timeoutMs,
+                )
+              })
+            }
+
+            const closeMobileTabs = () => dispatchMobileTabs({ type: "close" })
+
+            // The current tab's project avatar stays put; while it works, its activity ring shows beside the tab count.
+            const currentStatus = useSessionTabAvatarState(
+              () => currentTab()?.server,
+              () => session()?.id ?? "",
+              () => true,
+            )
+
+            const currentProject = createMemo(() => {
+              const tab = currentTab()
+              const value = session()
+
+              if (!tab || !value) return
+
+              return global.serverCtx(tab.server)?.projects.forSession(value)
+            })
+
+            const currentTitle = () => {
+              const tab = currentTab()
+
+              if (!tab) return language.t("home.title")
+
+              if (tab.type === "draft") return language.t("session.tab.session")
+              const value = session()
+
+              return sessionTabTitle(
+                value ? value.title : tabs.info[tabKey(tab)]?.title,
+                language.t("session.tab.session"),
+              )
+            }
+
+            createEffect(on(path, () => dispatchMobileTabs({ type: "route.changed" }), { defer: true }))
+            createEffect(
+              on(mobile, (value) => dispatchMobileTabs({ type: "viewport.changed", mobile: value }), { defer: true }),
+            )
+            onCleanup(() => dispatchMobileTabs({ type: "disposed" }))
+
+            const tabGroupsEnabled = () => settings.general.tabGroups()
+
+            const isGroupedSidebarList = () =>
+              tabGroupsEnabled() &&
+              settings.appearance.tabLayout() !== "inbox" &&
+              settings.general.sidebarOrganize() === "list"
+
+            return (
+              <TabGroupsProvider currentTab={currentTab}>
+                <PinsProvider currentTab={currentTab}>
+                {(() => {
+                  const tabGroups = useTabGroups()
+                  const pins = usePins()
+                  const prototype = () => settings.appearance.navigationPrototype()
+                  const pinnedTop = createPinnedLeading("horizontal")
+                  const pinnedSide = createPinnedLeading("vertical")
+
+                  const pinMenu = (tab: Tab) => {
+                    const ref = pins.refOf(tab)
+
+                    return ref ? <PinMenuItems pin={ref} /> : undefined
+                  }
+
+                  const listPins = {
+                    content: () => (
+                      <Show when={pins.state.items.length > 0}>
+                        <PinnedArea orientation="vertical" />
+                      </Show>
+                    ),
+                    keys: pins.keys,
+                    current: pins.currentKey,
+                    unread: pins.unread,
+                    navigate: pins.openKey,
+                    holds: (server: string, sessionId: string) =>
+                      pins.pinned({ server: ServerConnection.Key.make(server), sessionId }),
+                    toggle: (server: string, sessionId: string) => {
+                      const ref = { server: ServerConnection.Key.make(server), sessionId }
+
+                      if (pins.pinned(ref)) return pins.unpin(ref)
+                      pins.pin(ref)
+                    },
+                  }
+
+                  const pinnedVerticalStrip = () => (
+                    <TitlebarTabStrip
+                      orientation="vertical"
+                      leading={pinnedSide()}
+                      hidden={pins.holds}
+                      tabContextMenu={pinMenu}
+                      tabs={tabsStore}
+                      currentTab={currentTab()}
+                      onNavigate={(tab, el) => {
+                        tabs.select(tab)
+                        el?.scrollIntoView({ behavior: "instant", block: "nearest" })
+                      }}
+                      onClose={(tab) => {
+                        const index = tabsStore.findIndex((item) => tabKey(item) === tabKey(tab))
+
+                        if (index !== -1) tabsStoreActions.closeTab(index)
+                      }}
+                      onCloseTabs={(items, keep) => tabsStoreActions.closeTabs(items.map(tabKey), keep)}
+                      onReorder={(keys) => tabsStoreActions.reorder(keys)}
+                    />
+                  )
+
+                  const verticalSections = createVerticalTabGroupSections()
+
+                  const defaultVerticalTabStrip = () => (
+                    <Show when={tabGroupsEnabled()} fallback={verticalTabStrip()}>
+                      <TitlebarTabStrip
+                        orientation="vertical"
+                        sections={verticalSections()}
+                        customVerticalDrag={tabGroups.dragBinding}
+                        tabContextMenu={
+                          tabGroups.effectiveMode() === "none"
+                            ? (tab) => <TabAddToGroupMenuItems tab={tab} />
+                            : undefined
+                        }
+                        tabs={tabsStore}
+                        currentTab={currentTab()}
+                        onNavigate={(tab, el) => {
+                          tabs.select(tab)
+                          el?.scrollIntoView({ behavior: "instant", block: "nearest" })
+                        }}
+                        onClose={(tab) => {
+                          const index = tabsStore.findIndex((item) => tabKey(item) === tabKey(tab))
+
+                          if (index !== -1) tabsStoreActions.closeTab(index)
+                        }}
+                        onCloseTabs={(items, keep) => tabsStoreActions.closeTabs(items.map(tabKey), keep)}
+                        onReorder={(keys) => tabsStoreActions.reorder(keys)}
+                      />
+                    </Show>
+                  )
+
+                  return (
+                    <div
+                      ref={titlebarRow}
+                      class="h-full flex-1 overflow-hidden flex flex-row items-center gap-1.5 px-2 md:pe-3"
+                      classList={{
+                        "pt-[max(0px,calc(8px-env(safe-area-inset-top,0px)))]": !bottom() && !windows() && !mobileTop(),
+                        "pb-[max(0px,calc(8px-var(--shell-safe-area-bottom,var(--safe-area-inset-bottom,env(safe-area-inset-bottom,0px)))))]":
+                          bottom(),
+                        "pl-2.5": macTrafficLights(),
+                        // The menu glyph sits 2px further into its slot than the sidebar icons sit into their rows.
+                        "ps-[calc(var(--sidebar-inset-start)-2px)]": windows() && !!props.verticalTabs,
+                        "ps-3.5": windows() && !props.verticalTabs,
+                      }}
+                    >
+                      <Show when={windows() || linux()}>
+                        <WindowsAppMenu command={command} platform={platform} />
+                      </Show>
+                      <Show when={windows() && props.verticalTabs}>
+                        <SidebarToggle />
+                      </Show>
+                      <Show when={!mobile() && !props.verticalTabs}>
+                        {/* Pulls the first tab's avatar 10px from Search, past the row gap plus the tab's own inset. */}
+                        <div class="-me-0.5 flex shrink-0 items-center gap-0.5">
+                          {homeButton()}
+                          <Show when={!settings.appearance.navigationPrototype()}>{searchButton()}</Show>
+                        </div>
+                      </Show>
+
+                      <Show
+                        when={!mobile()}
+                        fallback={
+                          <MobileDrawer
+                            open={selectMobileTabsOpen(mobileTabsState())}
+                            onOpenChange={(open) => dispatchMobileTabs({ type: "drawer.changed", open })}
+                            onContentPresentChange={(present) => dispatchMobileTabs({ type: "content.present", present })}
+                          >
+                            <MobileDrawerTrigger
+                              data-slot="mobile-tabs-trigger"
+                              class="flex h-7 min-w-0 flex-1 items-center gap-2 rounded-[6px] px-2 text-[13px] leading-4 text-v2-text-text-base focus-visible:outline-none [app-region:no-drag]"
+                              aria-label={language.t("titlebar.tabs")}
+                            >
+                              <Show when={currentTab()} fallback={<Icon name="grid-plus" class="shrink-0" />}>
+                                {(tab) => (
+                                  <span
+                                    data-slot="project-avatar-slot"
+                                    class="flex size-4 shrink-0 items-center justify-center"
+                                  >
+                                    <Show
+                                      when={session()}
+                                      fallback={
+                                        tab().type === "draft" ? (
+                                          <Icon name="edit" />
+                                        ) : (
+                                          <span
+                                            class="block size-4 rounded-[3px] border border-v2-border-border-muted"
+                                            aria-hidden="true"
+                                          />
+                                        )
+                                      }
+                                    >
+                                      {(value) => (
+                                        <SessionTabAvatarView
+                                          project={currentProject()}
+                                          directory={value().location.directory}
+                                          unread={currentStatus.unread() && !currentStatus.loading()}
+                                        />
+                                      )}
+                                    </Show>
+                                  </span>
+                                )}
+                              </Show>
+                              <span data-slot="mobile-tab-title" dir="auto" class="min-w-0 flex-1 truncate text-start">
+                                {currentTitle()}
+                              </span>
+                              <Show when={preparing() || currentStatus.loading()}>
+                                <ActivityRing />
+                              </Show>
+                              <span class="shrink-0 text-v2-text-text-muted">{tabsStore.length}</span>
+                            </MobileDrawerTrigger>
+                            <MobileDrawerContent>
+                              <MobileDrawerLabel class="sr-only">{language.t("titlebar.tabs")}</MobileDrawerLabel>
+                              <div data-slot="mobile-tabs-drawer" data-corvu-no-drag>
+                                <div data-slot="mobile-tabs-drawer-list">
+                                  <TitlebarTabStrip
+                                    orientation="vertical"
+                                    tabs={tabsStore}
+                                    currentTab={currentTab()}
+                                    onNavigate={(tab) => {
+                                      tabs.select(tab)
+                                      closeMobileTabs()
+                                    }}
+                                    onClose={(tab) => {
+                                      const index = tabsStore.findIndex((item) => tabKey(item) === tabKey(tab))
+
+                                      if (index !== -1) tabsStoreActions.closeTab(index)
+                                    }}
+                                    onCloseTabs={(items, keep) => tabsStoreActions.closeTabs(items.map(tabKey), keep)}
+                                    onReorder={(keys) => tabsStoreActions.reorder(keys)}
+                                  />
+                                </div>
+                                <button
+                                  type="button"
+                                  data-action="mobile-tabs-new-session"
+                                  class="flex h-7 w-full shrink-0 items-center gap-2 rounded-[6px] px-2 text-[13px] leading-4 text-v2-text-text-base hover:bg-v2-background-bg-layer-02 focus-visible:outline-none focus-visible:bg-v2-background-bg-layer-02"
+                                  onClick={() => {
+                                    openNewTab()
+                                    closeMobileTabs()
+                                  }}
+                                >
+                                  <Icon name="plus" />
+                                  {language.t("command.session.new")}
+                                </button>
+                                <div class="flex shrink-0 flex-col gap-1 border-t border-v2-border-border-muted pt-2">
+                                  <button
+                                    type="button"
+                                    data-action="mobile-tabs-home"
+                                    data-state={layout.route().type === "home" ? "pressed" : undefined}
+                                    aria-current={layout.route().type === "home" ? "page" : undefined}
+                                    class="flex h-7 w-full items-center gap-2 rounded-[6px] px-2 text-[13px] leading-4 text-v2-text-text-faint data-[state=pressed]:text-v2-text-text-base focus-visible:outline-none"
+                                    onClick={() => {
+                                      if (layout.route().type !== "home") toggleHome()
+                                      closeMobileTabs()
+                                    }}
+                                  >
+                                    <Icon name="grid-plus" />
+                                    {language.t("home.title")}
+                                  </button>
+                                  <div class="flex items-center gap-1">
+                                    <button
+                                      type="button"
+                                      data-action="mobile-tabs-settings"
+                                      class="flex h-7 min-w-0 flex-1 items-center gap-2 rounded-[6px] px-2 text-[13px] leading-4 text-v2-text-text-faint hover:bg-v2-background-bg-layer-02 focus-visible:outline-none focus-visible:bg-v2-background-bg-layer-02"
+                                      onClick={() => dispatchMobileTabs({ type: "settings.requested" })}
+                                    >
+                                      <Icon name="settings-gear" />
+                                      {language.t("sidebar.settings")}
+                                    </button>
+                                    <button
+                                      type="button"
+                                      data-action="mobile-tabs-help"
+                                      class="flex h-7 shrink-0 items-center gap-2 rounded-[6px] px-2 text-[13px] leading-4 text-v2-text-text-faint hover:bg-v2-background-bg-layer-02 focus-visible:outline-none focus-visible:bg-v2-background-bg-layer-02"
+                                      onClick={() => {
+                                        closeMobileTabs()
+                                        platform.openExternal("https://opencode.ai/desktop-feedback")
+                                      }}
+                                    >
+                                      <Icon name="help" />
+                                      {language.t("sidebar.help")}
+                                    </button>
+                                  </div>
+                                </div>
+                              </div>
+                            </MobileDrawerContent>
+                          </MobileDrawer>
+                        }
+                      >
+                        <Show
+                          when={props.verticalTabs}
+                          fallback={
+                            <>
+                              <Show when={prototype() && pins.state.items.length > 0}>
+                                <PinnedArea orientation="horizontal" />
+                              </Show>
+                              <TitlebarTabStrip
+                                leading={prototype() ? pinnedTop() : undefined}
+                                hidden={prototype() ? pins.holds : undefined}
+                                tabContextMenu={prototype() ? pinMenu : undefined}
+                                tabs={tabsStore}
+                                currentTab={currentTab()}
+                                onNavigate={(tab, el) => {
+                                  tabs.select(tab)
+                                  el?.scrollIntoView({ behavior: "instant" })
+                                }}
+                                onClose={(tab) => {
+                                  const index = tabsStore.findIndex((item) => tabKey(item) === tabKey(tab))
+
+                                  if (index !== -1) tabsStoreActions.closeTab(index)
+                                }}
+                                onCloseTabs={(items, keep) => tabsStoreActions.closeTabs(items.map(tabKey), keep)}
+                                onReorder={(keys) => tabsStoreActions.reorder(keys)}
+                              />
+                              <RecentlyClosedTabsMenu
+                                onNewTab={openNewTab}
+                                tooltip={
+                                  <>
+                                    {language.t("command.session.new")}
+                                    <Keybind keys={command.keybindParts("tab.new")} variant="neutral" />
+                                  </>
+                                }
+                              />
+                            </>
+                          }
+                        >
+                          {(vertical) => (
+                            <Show when={vertical().mount} keyed>
+                              {(mount) => (
+                                <Portal
+                                  mount={mount}
+                                  ref={(element) => (element.className = "flex size-full min-h-0 flex-col")}
+                                >
+                                  <Show when={!windows()}>
+                                    <div
+                                      data-slot="sidebar-header"
+                                      data-has-action={actionInSidebarHeader() ? "" : undefined}
+                                      class="flex w-full shrink-0 gap-2"
+                                      classList={{
+                                        "items-start pt-2.5 pb-[3px]": actionInSidebarHeader(),
+                                        "mb-0.5 h-12 items-center": !actionInSidebarHeader(),
+                                      }}
+                                      style={{
+                                        "min-height": macVerticalTabs()
+                                          ? `${macTrafficLightsTopClearance / zoom()}px`
+                                          : undefined,
+                                      }}
+                                      data-tauri-drag-region
+                                    >
+                                      <Show when={macTrafficLights()}>
+                                        {/* The sidebar's start padding already covers part of the traffic lights. */}
+                                        <div
+                                          class="shrink-0"
+                                          style={{
+                                            width: `calc(${macVerticalTrafficLights(zoom()).width / zoom()}px - var(--sidebar-inset-start))`,
+                                          }}
+                                          aria-hidden="true"
+                                        />
+                                      </Show>
+                                      <Show when={actionInSidebarHeader()} fallback={<div class="flex-1" />}>
+                                        <div class="min-w-0 flex-1">{firstSidebarAction()}</div>
+                                      </Show>
+                                      <SidebarToggle handoff="out" />
+                                    </div>
+                                  </Show>
+                                  <div class="flex w-full shrink-0 flex-col gap-[3px]">
+                                    <Show when={!actionInSidebarHeader()}>{firstSidebarAction()}</Show>
+                                    <Show
+                                      when={settings.appearance.navigationPrototype()}
+                                      fallback={
+                                        <>
+                                          {searchButton(true)}
+                                          <Show when={projectNavigation()} fallback={newSessionButton()}>
+                                            {settingsButton()}
+                                          </Show>
+                                        </>
+                                      }
+                                    >
+                                      {homeButton(true)}
+                                      {settingsButton()}
+                                    </Show>
+                                  </div>
+                                  <Show
+                                    when={isGroupedSidebarList()}
+                                    fallback={<div class="h-4 w-full shrink-0" aria-hidden="true" />}
+                                  >
+                                    <VerticalTabGroupsControls />
+                                  </Show>
+                                  <div class="flex min-h-0 flex-1 flex-col gap-1">
+                                    <Switch fallback={defaultVerticalTabStrip()}>
+                                      <Match when={prototype() && settings.appearance.navigation() === "list"}>
+                                        <RecentSessions
+                                          organize={{
+                                            viewAll: () => {
+                                              if (layout.route().type !== "home") toggleHome()
+                                            },
+                                          }}
+                                          pinned={listPins}
+                                        />
+                                      </Match>
+                                      <Match when={prototype()}>{pinnedVerticalStrip()}</Match>
+                                      <Match when={settings.appearance.tabLayout() === "inbox"}>
+                                        <SidebarInbox />
+                                      </Match>
+                                      <Match when={settings.general.sidebarOrganize() === "customize"}>
+                                        <SidebarCustomized currentTab={currentTab()} onNewSession={openNewTab}>
+                                          {(grouped) => verticalTabStrip(undefined, undefined, grouped)}
+                                        </SidebarCustomized>
+                                      </Match>
+                                      <Match when={settings.general.sidebarOrganize() === "recent"}>
+                                        <RecentSessions />
+                                      </Match>
+                                    </Switch>
+                                  </div>
+                                  <Show when={titlebarItems.ids().length > 0}>
+                                    <div data-slot="vertical-tabs-footer" class="mt-2 flex w-full shrink-0 flex-col">
+                                      <TitlebarItems items={titlebarItems} vertical />
+                                    </div>
+                                  </Show>
+                                </Portal>
+                              )}
+                            </Show>
+                          )}
+                        </Show>
+                      </Show>
+                      <Show when={!mobile()}>
+                        <div class="flex-1" />
+                      </Show>
+                      <Show when={!props.verticalTabs}>
+                        <div class="relative z-20 flex shrink-0 items-center justify-end gap-0 overflow-visible">
+                          <TitlebarItems items={titlebarItems} />
+                        </div>
+                      </Show>
+                    </div>
+                  )
+                })()}
+                </PinsProvider>
+              </TabGroupsProvider>
+            )
+          }}
+        </Match>
+      </Switch>
+    </header>
+  )
+}

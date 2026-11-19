@@ -1,6 +1,7 @@
-// @ts-nocheck
-import * as mod from "./file-icon"
-import { create } from "../storybook/scaffold"
+import { For } from "solid-js"
+import { FileIcon, type FileIconProps } from "./file-icon"
+
+type Args = FileIconProps["node"] & Pick<FileIconProps, "expanded" | "mono">
 
 const docs = `### Overview
 File and folder icon renderer based on file name and extension.
@@ -25,19 +26,13 @@ Use in file trees and lists.
 
 `
 
-const story = create({
-  title: "UI/FileIcon",
-  mod,
-  args: {
-    node: { path: "package.json", type: "file" },
-    mono: true,
-  },
-})
-
 export default {
   title: "UI/FileIcon",
   id: "components-file-icon",
-  component: story.meta.component,
+  component: FileIcon,
+  args: { path: "package.json", type: "file", expanded: false, mono: true },
+  argTypes: { type: { control: "select", options: ["file", "directory"] } },
+  render: (args: Args) => <FileIcon node={args} expanded={args.expanded} mono={args.mono} />,
   tags: ["autodocs"],
   parameters: {
     docs: {
@@ -48,20 +43,22 @@ export default {
   },
 }
 
-export const Basic = story.Basic
+export const Basic = {}
 
 export const Folder = {
   args: {
-    node: { path: "src", type: "directory" },
+    path: "src",
+    type: "directory",
     expanded: true,
     mono: false,
   },
 }
 
 export const Samples = {
-  render: () => {
+  args: { path: "README.md", mono: false },
+  render: (args: Args) => {
     const items = [
-      { path: "README.md", type: "file" },
+      args,
       { path: "package.json", type: "file" },
       { path: "tsconfig.json", type: "file" },
       { path: "index.ts", type: "file" },
@@ -82,12 +79,14 @@ export const Samples = {
           "grid-template-columns": "repeat(auto-fill, minmax(120px, 1fr))",
         }}
       >
-        {items.map((node) => (
-          <div style={{ display: "flex", gap: "8px", "align-items": "center" }}>
-            <mod.FileIcon node={{ path: node.path, type: node.type }} mono={false} />
-            <div style={{ "font-size": "12px", color: "var(--text-weak)" }}>{node.path}</div>
-          </div>
-        ))}
+        <For each={items}>
+          {(node) => (
+            <div style={{ display: "flex", gap: "8px", "align-items": "center" }}>
+              <FileIcon node={node} mono={args.mono} expanded={args.expanded} />
+              <div style={{ "font-size": "12px", color: "var(--text-weak)" }}>{node.path}</div>
+            </div>
+          )}
+        </For>
       </div>
     )
   },
