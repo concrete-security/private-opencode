@@ -1,0 +1,261 @@
+export * as DesktopFiles from "./index"
+
+import { execFile, spawn } from "node:child_process"
+import { app, clipboard, dialog, nativeImage, shell, webContents } from "electron"
+import { Context, Effect, FileSystem, Layer, Path } from "effect"
+import type { DirectoryPickerOptions, FilePickerOptions, SaveFilePickerOptions } from "../../shared/ipc-contract"
+import { scoped } from "../native/logging"
+import { nativeT } from "../native/translations"
+import { assertAttachmentBudget, createPickedFileAuthorizations, readAttachment } from "./attachment-picker"
+import { resolveExternalURL } from "./external-url"
+import { pickerStarts } from "./picker-start"
+
+export type Interface = ReturnType<typeof make>
+
+export class Service extends Context.Service<Service, Interface>()("opencode/desktop/DesktopFiles") {}
+
+export const layer = Layer.effect(
+  Service,
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem
+    const path = yield* Path.Path
+
+    const pickedFiles = createPickedFileAuthorizations(
+      (file, maxBytes) => readAttachment(file, maxBytes).pipe(Effect.provideService(FileSystem.FileSystem, fs)),
+      watchRenderer,
+    )
+
+    yield* Effect.addFinalizer(() => Effect.sync(pickedFiles.dispose))
+
+    return Service.of(make(fs, path, pickedFiles))
+  }),
+)
+
+// A renderer that reloads or closes drops its picked files: the next document never asked for them.
+function watchRenderer(sender: number, clear: () => void) {
+  const contents = webContents.fromId(sender)
+
+  if (!contents || contents.isDestroyed()) {
+    queueMicrotask(clear)
+
+    return () => {}
+  }
+
+  const navigated = (event: Electron.Event<{ isMainFrame: boolean; isSameDocument: boolean }>) => {
+    if (event.isMainFrame && !event.isSameDocument) clear()
+  }
+
+  contents.on("did-start-navigation", navigated)
+  contents.once("destroyed", clear)
+
+  return () => {
+    if (contents.isDestroyed()) return
+    contents.off("did-start-navigation", navigated)
+    contents.off("destroyed", clear)
+  }
+}
+
+function make(
+  fs: FileSystem.FileSystem,
+  path: Path.Path,
+  pickedFiles: ReturnType<typeof createPickedFileAuthorizations>,
+) {
+  // The first start that exists; none when even home is gone, which leaves the system to choose.
+  const start = Effect.fnUntraced(function* (requested: string | undefined, save = false) {
+    for (const candidate of pickerStarts(requested, app.getPath("home"), save)) {
+      if (yield* fs.exists(candidate.check).pipe(Effect.orElseSucceed(() => false))) return candidate.use
+    }
+
+    return undefined
+  })
+
+  return {
+    openDirectoryPicker: Effect.fn("DesktopFiles.openDirectoryPicker")(function* (options?: DirectoryPickerOptions) {
+      const defaultPath = yield* start(options?.defaultPath)
+
+      const result = yield* Effect.promise(() =>
+        dialog.showOpenDialog({
+          properties: ["openDirectory", ...(options?.multiple ? ["multiSelections" as const] : []), "createDirectory"],
+          title: options?.title ?? nativeT("desktop.dialog.chooseFolder"),
+          defaultPath,
+        }),
+      )
+
+      if (result.canceled) return null
+
+      return options?.multiple ? result.filePaths : result.filePaths[0]
+    }),
+    openFilePicker: Effect.fn("DesktopFiles.openFilePicker")(function* (sender: number, options?: FilePickerOptions) {
+      const picker = pickedFiles.open(sender)
+
+      if (picker === undefined) return null
+
+      return yield* Effect.gen(function* () {
+        const defaultPath = yield* start(options?.defaultPath)
+
+        const result = yield* Effect.promise(() =>
+          dialog.showOpenDialog({
+            properties: ["openFile", ...(options?.multiple ? ["multiSelections" as const] : [])],
+            title: options?.title ?? nativeT("desktop.dialog.chooseFile"),
+            defaultPath,
+            filters: pickerFilters(options?.extensions),
+          }),
+        )
+
+        if (result.canceled) return null
+
+        const files = yield* Effect.forEach(
+          result.filePaths,
+          Effect.fnUntraced(function* (file) {
+            const info = yield* fs.stat(file)
+
+            return { path: file, name: path.basename(file), size: Number(info.size) }
+          }),
+          { concurrency: "unbounded" },
+        )
+
+        assertAttachmentBudget(files)
+        const token = pickedFiles.grant(picker, result.filePaths)
+
+        return token === undefined ? null : { token, files }
+      }).pipe(Effect.ensuring(Effect.sync(() => pickedFiles.close(picker))))
+    }),
+    readPickedFile: pickedFiles.read,
+    releasePickedFiles: pickedFiles.release,
+    saveFile: Effect.fn("DesktopFiles.saveFile")(function* (options: SaveFilePickerOptions, content: string) {
+      const defaultPath = yield* start(options?.defaultPath, true)
+
+      const result = yield* Effect.promise(() =>
+        dialog.showSaveDialog({
+          title: options?.title ?? nativeT("desktop.dialog.saveFile"),
+          defaultPath,
+        }),
+      )
+
+      if (result.canceled) return false
+
+      if (!result.filePath) return false
+      yield* fs.writeFile(result.filePath, new TextEncoder().encode(content))
+
+      return true
+    }),
+    openPath: Effect.fn("DesktopFiles.openPath")(function* (target: string, application?: string) {
+      if (!application) {
+        const error = yield* Effect.promise(() => shell.openPath(target))
+
+        if (error) return yield* Effect.fail(new Error(error))
+
+        return
+      }
+
+      if (process.platform === "win32" && /^wt(?:\.exe)?$/i.test(path.basename(application))) {
+        const info = yield* fs.stat(target)
+        const cwd = info.type === "Directory" ? target : path.dirname(target)
+
+        // Windows Terminal splits its command line on `;` even inside quotes, so the folder goes only to `cwd`,
+        // never onto its command line, and it opens a window of its own rather than a tab in one the user has open.
+        return yield* Effect.tryPromise(() =>
+          new Promise<void>((resolve, reject) => {
+            const child = spawn(application, windowsTerminalArgs, { cwd, stdio: "ignore", detached: true })
+            child.once("error", reject)
+            child.once("spawn", () => {
+              child.unref()
+              resolve()
+            })
+          }),
+        )
+      }
+
+      if (process.platform === "win32" && /^(?:powershell|pwsh)(?:\.exe)?$/i.test(path.basename(application))) {
+        const info = yield* fs.stat(target)
+        const cwd = info.type === "Directory" ? target : path.dirname(target)
+
+        // PowerShell takes its working directory rather than a path argument, and needs its own console window:
+        // `start` opens one, and ignored stdio keeps the console from holding cmd's pipes open until PowerShell exits.
+        return yield* Effect.tryPromise(() =>
+          new Promise<void>((resolve, reject) => {
+            spawn("cmd.exe", ["/d", "/c", "start", "", application, "-NoExit"], {
+              cwd,
+              stdio: "ignore",
+              windowsHide: true,
+            })
+              .once("error", reject)
+              .once("exit", (code) => (code === 0 ? resolve() : reject(new Error(`start exited with code ${code}`))))
+          }),
+        )
+      }
+
+      yield* Effect.tryPromise(() =>
+        new Promise<void>((resolve, reject) => {
+          const command =
+            process.platform === "darwin"
+              ? { file: "open", arguments: ["-a", application, target] }
+              : { file: application, arguments: [target] }
+
+          execFile(command.file, command.arguments, (error) => (error ? reject(error) : resolve()))
+        }),
+      )
+    }),
+    revealPath: Effect.fn("DesktopFiles.revealPath")(function* (target: string) {
+      const exists = yield* fs.exists(target).pipe(Effect.orElseSucceed(() => false))
+
+      if (!exists) return false
+      shell.showItemInFolder(target)
+
+      return true
+    }),
+    readClipboardImage: Effect.fn("DesktopFiles.readClipboardImage")(function* () {
+      const items = yield* Effect.promise(() => clipboard.read())
+
+      const found = clipboardImageTypes
+        .flatMap((mime) => items.filter((item) => item.types.includes(mime)).map((item) => ({ item, mime })))
+        .at(0)
+
+      if (!found) return null
+      // getType() is typed as Blob | ClipboardBookmark; only the bookmark format yields the latter.
+      const payload = yield* Effect.promise(async () => found.item.getType(found.mime))
+
+      if (!(payload instanceof Blob)) return null
+      const bytes = yield* Effect.promise(() => payload.arrayBuffer())
+      // Re-encode through nativeImage so the renderer always receives PNG and the image dimensions.
+      const image = nativeImage.createFromBuffer(Buffer.from(bytes))
+
+      if (image.isEmpty()) return null
+      const size = image.getSize()
+
+      return { buffer: new Uint8Array(image.toPNG()), width: size.width, height: size.height }
+    }),
+    writeClipboardText: Effect.fn("DesktopFiles.writeClipboardText")(function* (text: string) {
+      yield* Effect.promise(() => clipboard.writeText(text))
+    }),
+  }
+}
+
+// Chromium exposes copied bitmaps as image/png; JPEG only appears when an app placed one explicitly.
+const clipboardImageTypes = ["image/png", "image/jpeg"]
+
+// A new Windows Terminal window whose first tab starts in the launch's working directory.
+const windowsTerminalArgs = ["-w", "new", "-d", "."]
+
+export const openExternalURL = Effect.fn("DesktopFiles.openExternalURL")(function* (value: string) {
+  const url = resolveExternalURL(value)
+
+  if (!url) {
+    yield* scoped("window", Effect.logWarning("blocked external target", { url: value }))
+
+    return false
+  }
+
+  return yield* Effect.tryPromise(() => shell.openExternal(url)).pipe(
+    Effect.as(true),
+    Effect.catch((error) =>
+      scoped("window", Effect.logError("failed to open external target", { url, error })).pipe(Effect.as(false)),
+    ),
+  )
+})
+
+function pickerFilters(extensions?: string[]) {
+  if (!extensions?.length) return undefined
+
+  return [{ name: nativeT("desktop.dialog.files"), extensions }]
+}
