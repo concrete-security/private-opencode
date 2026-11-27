@@ -1,0 +1,197 @@
+import { createSimpleContext } from "@opencode/ui/context"
+import type { AsyncStorage, SyncStorage } from "@solid-primitives/storage"
+import type { Accessor } from "solid-js"
+import type { DesktopMenuAction, DesktopZoomLevel } from "@/shell/commands/desktop-menu"
+import type { DraftStore } from "@/runtime/persistence/drafts"
+import type { Bridge } from "@opencode/plugin/gui/host"
+
+type PickerPaths = string | string[] | null
+
+type OpenDirectoryPickerOptions = { title?: string; multiple?: boolean }
+
+type OpenAttachmentPickerOptions = {
+  title?: string
+  multiple?: boolean
+  accept?: string[]
+  extensions?: string[]
+  defaultPath?: string
+}
+
+type OpenFilePathPickerOptions = { title?: string; multiple?: boolean; extensions?: string[] }
+
+type SaveFilePickerOptions = { title?: string; defaultPath?: string }
+
+type PlatformName = "web" | "desktop"
+
+type DesktopOS = "macos" | "windows" | "linux"
+
+export type FatalRendererErrorLog = {
+  error: string
+  url: string
+  version?: string
+  platform: PlatformName
+  os?: DesktopOS
+}
+
+type PlatformBase = {
+  requestMicrophone?(): Promise<boolean>
+  setVoiceCallActive?(active: boolean): Promise<void>
+  /** App version */
+  version?: string
+
+  /** Open a web or mail URL in the default system application */
+  openExternal(url: string): void
+
+  /** Open an authentication page, reporting whether the browser could be launched. */
+  openBrowser?(url: string): Promise<boolean>
+
+  /** Open a local path in a local app (desktop only) */
+  openPath?(path: string, app?: string): Promise<void>
+
+  /** Reveal a local path in the system file manager; false when the path does not exist (desktop only) */
+  revealPath?(path: string): Promise<boolean>
+
+  /** Restart the app  */
+  restart(): Promise<void>
+
+  /**
+   * Send a system notification. `options.tag` names it so a later one with the same tag replaces it and
+   * `dismissNotification` can take it back; `options.detail` is a second line saying what it is about.
+   */
+  notify(
+    title: string,
+    description?: string,
+    onClick?: () => void,
+    options?: { tag?: string; detail?: string },
+  ): Promise<void>
+
+  /** Take back the system notification sent with this tag, when it is still shown (desktop only) */
+  dismissNotification?(tag: string): void
+
+  /** Draw the user to a window in the background, as a flashing taskbar button on Windows (desktop only) */
+  requestAttention?(): Promise<void>
+
+  /** Open a native attachment picker and read selected files sequentially (desktop only) */
+  openAttachmentPickerDialog?<Value>(
+    opts: OpenAttachmentPickerOptions,
+    onFile: (file: File) => Promise<Value>,
+  ): Promise<void>
+
+  /** Open a native file picker and return the selected paths without reading the files (desktop only) */
+  openFilePathPickerDialog?(opts: OpenFilePathPickerOptions): Promise<string[] | null>
+
+  /** Resolve the native source path for a desktop File. */
+  getPathForFile?(file: File): string
+
+  /**
+   * Start a system drag of a local file, so it drops into other apps as the file itself (Windows desktop only).
+   * Resolves once the drag ends; false when none started.
+   */
+  startFileDrag?(path: string): Promise<boolean>
+
+  /**
+   * Observe `opencode://` links opened with the app (desktop only). Links that arrived before the first listener
+   * are delivered to it at once.
+   */
+  onDeepLinks?(listener: (urls: string[]) => void): () => void
+
+  /** Observe native drag cancellation that does not reach the renderer event loop. */
+  onDragCancel?(callback: () => void): () => void
+
+  /** Observe the machine waking from sleep, when server event streams may be dead without knowing it (desktop only) */
+  onSystemResume?(callback: () => void): () => void
+
+  /** Open a native save file dialog and write content to the selected path (desktop only) */
+  saveFile?(opts: SaveFilePickerOptions, content: string): Promise<boolean>
+
+  /** Storage mechanism, defaults to localStorage */
+  storage?: (name?: string) => SyncStorage | AsyncStorage
+
+  /** Prompt drafts, history, and their blobs. */
+  draftStore?: DraftStore
+
+  /** Fetch override */
+  fetch?: typeof fetch
+
+  /** Webview zoom level (desktop only) */
+  webviewZoom?: Accessor<number>
+
+  /** Saved interface zoom level; a pinch can move `webviewZoom` off it (desktop only) */
+  zoomLevel?: Accessor<DesktopZoomLevel>
+
+  /** Save an interface zoom level and apply it to every window (desktop only) */
+  setZoomLevel?(level: DesktopZoomLevel): Promise<void>
+
+  /** Whether the native desktop window is fullscreen */
+  windowFullscreen?: Accessor<boolean>
+
+  /** Move the native macOS traffic lights' top-left corner, in window points (desktop only) */
+  setTrafficLightsPosition?(position: { x: number; y: number }): Promise<void>
+
+  /** Get whether native pinch/Ctrl-scroll zoom gestures are enabled (desktop only) */
+  getPinchZoomEnabled?(): Promise<boolean> | boolean
+
+  /** Allow native pinch/Ctrl-scroll zoom gestures (desktop only) */
+  setPinchZoomEnabled?(enabled: boolean): Promise<void> | void
+
+  /** Get whether the native spellchecker underlines misspelled words (desktop only) */
+  getSpellcheckEnabled?(): Promise<boolean>
+
+  /** Turn the native spellchecker on or off (desktop only) */
+  setSpellcheckEnabled?(enabled: boolean): Promise<void>
+
+  /** Get whether mouse-wheel scrolling animates; read at launch (desktop on Linux only) */
+  getSmoothScrollingEnabled?(): Promise<boolean>
+
+  /** Save whether mouse-wheel scrolling animates; applies after a relaunch (desktop on Linux only) */
+  setSmoothScrollingEnabled?(enabled: boolean): Promise<void>
+
+  /** Get whether the background service keeps running after the app quits (desktop only) */
+  getKeepServiceRunning?(): Promise<boolean>
+
+  /** Keep the background service running after the app quits, or stop it on quit (desktop only) */
+  setKeepServiceRunning?(enabled: boolean): Promise<void>
+
+  /** Run a desktop-only menu action from the app chrome */
+  runDesktopMenuAction?(action: DesktopMenuAction): Promise<void> | void
+
+  /** Check if an editor app exists (desktop only) */
+  checkAppExists?(appName: string): Promise<boolean>
+
+  /** Read image from clipboard (desktop only) */
+  readClipboardImage?(): Promise<File | null>
+
+  /** Write text to the native clipboard (desktop only) */
+  writeClipboardText?(text: string): Promise<void>
+
+  /** Export collected diagnostic logs (desktop only) */
+  exportDebugLogs?(): Promise<string>
+
+  /** Force focus styles on interactive elements through desktop devtools (desktop only) */
+  setForceFocus?(enabled: boolean): Promise<void>
+
+  /** Record a fatal renderer error in platform logs (desktop only) */
+  recordFatalRendererError?(error: FatalRendererErrorLog): Promise<void>
+
+  /** GUI plugin bridge to the main-process plugin host (desktop only). */
+  plugins?: Bridge
+}
+
+export type Platform = PlatformBase &
+  (
+    | { platform: "web"; os?: never; windowID?: never }
+    | {
+        platform: "desktop"
+        os?: DesktopOS
+        /** Stable platform window identity for window-scoped persistence */
+        windowID: string
+        openDirectoryPickerDialog(opts?: OpenDirectoryPickerOptions): Promise<PickerPaths>
+      }
+  )
+
+export const { use: usePlatform, provider: PlatformProvider } = createSimpleContext({
+  name: "Platform",
+  init: (props: { value: Platform }) => {
+    return props.value
+  },
+})
